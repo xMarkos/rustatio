@@ -11,6 +11,14 @@ export function getIdlingReasonText(reason) {
     return 'No seeders available';
   }
 
+  if (reason === 'low_leechers' || reason === 'lowLeechers') {
+    return 'Leechers below minimum';
+  }
+
+  if (reason === 'high_seeder_ratio' || reason === 'highSeederRatio') {
+    return 'Seeder/leecher ratio too high';
+  }
+
   return null;
 }
 
