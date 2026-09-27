@@ -285,7 +285,7 @@ pub enum PostStopAction {
     DeleteInstance,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FakerState {
     Idle,
     Starting,
@@ -1404,6 +1404,19 @@ impl RatioFaker {
         self.stats.effective_stop_at_ratio = config.stop_at_ratio;
 
         self.config = config;
+
+        if self.stats.stop_condition_met
+            && self.stats.state == FakerState::Running
+            && self.stats.is_idling
+            && self.config.post_stop_action == PostStopAction::Idle
+            && !Self::stop_conditions_triggered(&self.config, &self.stats)
+        {
+            log_info!("Stop conditions relaxed via config update, resuming from idle");
+            self.stats.stop_condition_met = false;
+            self.stats.is_idling = false;
+            self.stats.idling_reason = None;
+        }
+
         Ok(())
     }
 
@@ -1578,8 +1591,14 @@ impl RatioFaker {
             return false;
         }
 
+        Self::stop_conditions_triggered(&self.config, stats)
+    }
+
+    /// Pure stop-condition evaluation without the met latch, so config
+    /// updates can re-evaluate relaxed targets.
+    fn stop_conditions_triggered(config: &FakerConfig, stats: &FakerStats) -> bool {
         // Check ratio target (cumulative across all sessions)
-        if let Some(target_ratio) = self.config.stop_at_ratio {
+        if let Some(target_ratio) = config.stop_at_ratio {
             if stats.ratio >= target_ratio - 0.001 {
                 log_info!(
                     "Target ratio reached: {:.3} >= {:.3} (cumulative)",
@@ -1591,7 +1610,7 @@ impl RatioFaker {
         }
 
         // Check uploaded target (cumulative across all sessions)
-        if let Some(target_uploaded) = self.config.stop_at_uploaded {
+        if let Some(target_uploaded) = config.stop_at_uploaded {
             if stats.uploaded >= target_uploaded {
                 log_info!(
                     "Target uploaded reached: {} >= {} bytes (cumulative)",
@@ -1603,7 +1622,7 @@ impl RatioFaker {
         }
 
         // Check downloaded target (cumulative across all sessions)
-        if let Some(target_downloaded) = self.config.stop_at_downloaded {
+        if let Some(target_downloaded) = config.stop_at_downloaded {
             if stats.downloaded >= target_downloaded {
                 log_info!(
                     "Target downloaded reached: {} >= {} bytes (cumulative)",
@@ -1615,7 +1634,7 @@ impl RatioFaker {
         }
 
         // Check seed time target
-        if let Some(target_seed_time) = self.config.stop_at_seed_time {
+        if let Some(target_seed_time) = config.stop_at_seed_time {
             if stats.elapsed_time.as_secs() >= target_seed_time {
                 log_info!(
                     "Target seed time reached: {}s >= {}s",
@@ -2018,6 +2037,67 @@ mod tests {
         assert_eq!(config.upload_rate, 50.0);
         assert_eq!(config.download_rate, 100.0);
         assert!(!config.vpn_port_sync);
+    }
+
+    fn resume_test_faker(ratio: f64, target: f64) -> RatioFaker {
+        let torrent = Arc::new(TorrentInfo {
+            info_hash: [14u8; 20],
+            announce: "https://tracker.test/announce".to_string(),
+            announce_list: None,
+            name: "sample".to_string(),
+            total_size: 1024,
+            piece_length: 256,
+            num_pieces: 4,
+            creation_date: None,
+            comment: None,
+            created_by: None,
+            is_single_file: true,
+            file_count: 1,
+            files: Vec::new(),
+        });
+        let config = FakerConfig { stop_at_ratio: Some(target), ..Default::default() };
+        let faker = RatioFaker::new(torrent, config, None);
+        assert!(faker.is_ok());
+        let mut faker = faker.unwrap_or_else(|_| panic!("failed to create faker"));
+        faker.stats.state = FakerState::Running;
+        faker.stats.ratio = ratio;
+        faker.stats.stop_condition_met = true;
+        faker.stats.is_idling = true;
+        faker.stats.idling_reason = Some("stop_condition_met".to_string());
+        faker
+    }
+
+    #[test]
+    fn relaxed_ratio_config_resumes_idling_instance() {
+        let mut faker = resume_test_faker(3.0, 2.0);
+        let relaxed = FakerConfig { stop_at_ratio: Some(5.0), ..Default::default() };
+        assert!(faker.update_config(relaxed, None).is_ok());
+        assert!(!faker.stats.stop_condition_met);
+        assert!(!faker.stats.is_idling);
+        assert!(faker.stats.idling_reason.is_none());
+    }
+
+    #[test]
+    fn relaxed_config_never_revives_stopped_instance() {
+        let mut faker = resume_test_faker(3.0, 2.0);
+        faker.stats.state = FakerState::Stopped;
+        faker.stats.is_idling = false;
+        faker.stats.idling_reason = None;
+        let relaxed = FakerConfig { stop_at_ratio: Some(5.0), ..Default::default() };
+        assert!(faker.update_config(relaxed, None).is_ok());
+        assert!(faker.stats.stop_condition_met);
+        assert_eq!(faker.stats.state, FakerState::Stopped);
+        assert!(!faker.stats.is_idling);
+    }
+
+    #[test]
+    fn still_met_ratio_config_keeps_idling() {
+        let mut faker = resume_test_faker(3.0, 2.0);
+        let same = FakerConfig { stop_at_ratio: Some(2.0), ..Default::default() };
+        assert!(faker.update_config(same, None).is_ok());
+        assert!(faker.stats.stop_condition_met);
+        assert!(faker.stats.is_idling);
+        assert_eq!(faker.stats.idling_reason.as_deref(), Some("stop_condition_met"));
     }
 
     #[test]
