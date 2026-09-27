@@ -86,6 +86,8 @@ export function createBulkEditState(instances = []) {
     stopAtSeedTimeHours: inst.stopAtSeedTimeHours,
     idleWhenNoLeechers: inst.idleWhenNoLeechers,
     idleWhenNoSeeders: inst.idleWhenNoSeeders,
+    minLeechers: inst.minLeechers ?? 0,
+    maxSeederLeecherRatio: inst.maxSeederLeecherRatio ?? null,
     postStopAction: inst.postStopAction,
   }));
 
