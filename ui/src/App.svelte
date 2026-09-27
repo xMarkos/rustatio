@@ -1729,6 +1729,8 @@
                   stopAtSeedTimeHours={$activeInstance.stopAtSeedTimeHours}
                   idleWhenNoLeechers={$activeInstance.idleWhenNoLeechers}
                   idleWhenNoSeeders={$activeInstance.idleWhenNoSeeders}
+                  minLeechers={$activeInstance.minLeechers ?? 0}
+                  maxSeederLeecherRatio={$activeInstance.maxSeederLeecherRatio ?? null}
                   postStopAction={$activeInstance.postStopAction}
                   completionPercent={$activeInstance.completionPercent}
                   isRunning={$activeInstance.isRunning || false}
