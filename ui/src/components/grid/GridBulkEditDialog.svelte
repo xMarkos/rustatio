@@ -74,6 +74,8 @@
   let stopAtSeedTimeHours = $state(24);
   let idleWhenNoLeechers = $state(false);
   let idleWhenNoSeeders = $state(false);
+  let minLeechers = $state(0);
+  let maxSeederLeecherRatio = $state(null);
   let postStopAction = $state('idle');
 
   let selectedCount = $derived(selectedIds.length);
@@ -155,6 +157,8 @@
     stopAtSeedTimeHours = stopConditions.stopAtSeedTimeHours ?? 24;
     idleWhenNoLeechers = stopConditions.idleWhenNoLeechers ?? false;
     idleWhenNoSeeders = stopConditions.idleWhenNoSeeders ?? false;
+    minLeechers = stopConditions.minLeechers ?? 0;
+    maxSeederLeecherRatio = stopConditions.maxSeederLeecherRatio ?? null;
     postStopAction = stopConditions.postStopAction || 'idle';
   });
 
@@ -209,6 +213,8 @@
       stopAtSeedTimeHours: (config.stop_at_seed_time || 0) / 3600,
       idleWhenNoLeechers: config.idle_when_no_leechers || false,
       idleWhenNoSeeders: config.idle_when_no_seeders || false,
+      minLeechers: config.min_leechers || 0,
+      maxSeederLeecherRatio: config.max_seeder_leecher_ratio ?? null,
       postStopAction: config.post_stop_action || 'idle',
       progressiveRatesEnabled: config.progressive_rates || false,
       targetUploadRate: config.target_upload_rate || 100,
@@ -247,6 +253,8 @@
       stopAtSeedTimeHours: 24,
       idleWhenNoLeechers: false,
       idleWhenNoSeeders: false,
+      minLeechers: 0,
+      maxSeederLeecherRatio: null,
       postStopAction: 'idle',
       progressiveRatesEnabled: false,
       targetUploadRate: 100,
@@ -285,6 +293,8 @@
       stopAtSeedTimeHours: instance.stopAtSeedTimeHours,
       idleWhenNoLeechers: instance.idleWhenNoLeechers,
       idleWhenNoSeeders: instance.idleWhenNoSeeders,
+      minLeechers: instance.minLeechers ?? 0,
+      maxSeederLeecherRatio: instance.maxSeederLeecherRatio ?? null,
       postStopAction: instance.postStopAction,
       progressiveRatesEnabled: instance.progressiveRatesEnabled,
       targetUploadRate: instance.targetUploadRate,
@@ -812,6 +822,8 @@
               bind:stopAtSeedTimeHours
               bind:idleWhenNoLeechers
               bind:idleWhenNoSeeders
+              bind:minLeechers
+              bind:maxSeederLeecherRatio
               bind:postStopAction
               {completionPercent}
               onchange={updates => autoEnable('stopConditions', updates)}

@@ -118,6 +118,8 @@ export function serializeSessionInstances(instances) {
     stop_at_seed_time_hours: parseFloat(inst.stopAtSeedTimeHours),
     idle_when_no_leechers: inst.idleWhenNoLeechers,
     idle_when_no_seeders: inst.idleWhenNoSeeders,
+    min_leechers: parseInt(inst.minLeechers ?? 0),
+    max_seeder_leecher_ratio: inst.maxSeederLeecherRatio != null && inst.maxSeederLeecherRatio !== '' ? parseFloat(inst.maxSeederLeecherRatio) : null,
     post_stop_action: inst.postStopAction,
     progressive_rates_enabled: inst.progressiveRatesEnabled,
     target_upload_rate: parseFloat(inst.targetUploadRate),

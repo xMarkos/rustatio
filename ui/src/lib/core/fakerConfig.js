@@ -43,6 +43,8 @@ export function buildFakerConfig(instance, clientVersions = {}, opts = {}) {
       : null,
     idle_when_no_leechers: instance.idleWhenNoLeechers ?? false,
     idle_when_no_seeders: instance.idleWhenNoSeeders ?? false,
+    min_leechers: parseInt(instance.minLeechers ?? 0),
+    max_seeder_leecher_ratio: instance.maxSeederLeecherRatio != null && instance.maxSeederLeecherRatio !== '' ? parseFloat(instance.maxSeederLeecherRatio) : null,
     post_stop_action: instance.postStopAction || 'idle',
     progressive_rates: instance.progressiveRatesEnabled ?? false,
     target_upload_rate: instance.progressiveRatesEnabled
