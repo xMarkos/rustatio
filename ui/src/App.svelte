@@ -1483,7 +1483,7 @@
           let statusMessage, statusType, statusIcon;
           if (instance.isPaused) {
             ({ statusMessage, statusType, statusIcon } = getPausedStatus());
-          } else if (instance.stats?.is_idling) {
+          } else if (instance.stats?.is_idling || instance.stats?.is_paced) {
             const statusFromStats = getStatusFromStats(instance.stats);
             statusMessage = statusFromStats.statusMessage;
             statusType = statusFromStats.statusType;
@@ -1685,6 +1685,12 @@
                   targetUploadRate={$activeInstance.targetUploadRate}
                   targetDownloadRate={$activeInstance.targetDownloadRate}
                   progressiveDurationHours={$activeInstance.progressiveDurationHours}
+                  swarmPacingEnabled={$activeInstance.swarmPacingEnabled}
+                  swarmMaxPeers={$activeInstance.swarmMaxPeers}
+                  swarmResampleIntervalSecs={$activeInstance.swarmResampleIntervalSecs}
+                  swarmEpsilonMinPercent={$activeInstance.swarmEpsilonMinPercent}
+                  swarmPhaseMinOursPercent={$activeInstance.swarmPhaseMinOursPercent}
+                  swarmPhaseMinSeedFraction={$activeInstance.swarmPhaseMinSeedFraction}
                   isRunning={$activeInstance.isRunning || false}
                   onUpdate={updates => {
                     // Reset cumulative stats if user changes initial values

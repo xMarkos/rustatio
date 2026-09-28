@@ -45,6 +45,25 @@ export function buildFakerConfig(instance, clientVersions = {}, opts = {}) {
     idle_when_no_seeders: instance.idleWhenNoSeeders ?? false,
     min_leechers: parseInt(instance.minLeechers ?? 0),
     max_seeder_leecher_ratio: instance.maxSeederLeecherRatio != null && instance.maxSeederLeecherRatio !== '' ? parseFloat(instance.maxSeederLeecherRatio) : null,
+    // Swarm knobs: unset fields are omitted so backend defaults apply.
+    ...(instance.swarmPacingEnabled != null
+      ? { swarm_pacing_enabled: instance.swarmPacingEnabled }
+      : {}),
+    ...(instance.swarmMaxPeers != null && instance.swarmMaxPeers !== ''
+      ? { swarm_max_peers: parseInt(instance.swarmMaxPeers) }
+      : {}),
+    ...(instance.swarmResampleIntervalSecs != null && instance.swarmResampleIntervalSecs !== ''
+      ? { swarm_resample_interval_secs: parseInt(instance.swarmResampleIntervalSecs) }
+      : {}),
+    ...(instance.swarmEpsilonMinPercent != null && instance.swarmEpsilonMinPercent !== ''
+      ? { swarm_epsilon_min_percent: parseFloat(instance.swarmEpsilonMinPercent) }
+      : {}),
+    ...(instance.swarmPhaseMinOursPercent != null && instance.swarmPhaseMinOursPercent !== ''
+      ? { swarm_phase_min_ours_percent: parseFloat(instance.swarmPhaseMinOursPercent) }
+      : {}),
+    ...(instance.swarmPhaseMinSeedFraction != null && instance.swarmPhaseMinSeedFraction !== ''
+      ? { swarm_phase_min_seed_fraction: parseFloat(instance.swarmPhaseMinSeedFraction) }
+      : {}),
     post_stop_action: instance.postStopAction || 'idle',
     progressive_rates: instance.progressiveRatesEnabled ?? false,
     target_upload_rate: instance.progressiveRatesEnabled

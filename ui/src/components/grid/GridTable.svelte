@@ -159,7 +159,7 @@
     scrollTop = e.target.scrollTop;
   }
 
-  let view = $derived(
+let view = $derived(
     getWindow({
       total: data.length,
       scrollTop,
@@ -171,6 +171,65 @@
   let visibleData = $derived(data.slice(view.startIndex, view.endIndex));
   let offsetY = $derived(view.offsetY);
   let totalHeight = $derived(view.totalHeight);
+
+  function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function formatRate(rate) {
+    if (!rate || rate === 0) return '-';
+    if (rate >= 1000) return (rate / 1024).toFixed(1) + ' MB/s';
+    return rate.toFixed(1) + ' KB/s';
+  }
+
+  function getStateIcon(state) {
+    switch (state?.toLowerCase()) {
+      case 'starting':
+      case 'stopping':
+        return LoaderCircle;
+      case 'running':
+      case 'paced':
+        return Circle;
+      case 'paused':
+        return Pause;
+      case 'idle':
+        return Moon;
+      case 'stopped':
+        return Square;
+      default:
+        return Circle;
+    }
+  }
+
+  function getStateColor(state) {
+    switch (state?.toLowerCase()) {
+      case 'starting':
+        return 'text-primary';
+      case 'stopping':
+        return 'text-stat-danger';
+      case 'running':
+        return 'text-stat-upload';
+      case 'paced':
+        return 'text-stat-download';
+      case 'paused':
+        return 'text-stat-ratio';
+      case 'idle':
+        return 'text-violet-500';
+      case 'stopped':
+        return 'text-muted-foreground';
+      default:
+        return 'text-muted-foreground';
+    }
+  }
+
+  function isAnimatedState(state) {
+    const value = state?.toLowerCase();
+    return value === 'starting' || value === 'stopping';
+  }
 
   function getIssueMessage(instance) {
     return getTrackerIssue(instance)?.statusMessage || null;

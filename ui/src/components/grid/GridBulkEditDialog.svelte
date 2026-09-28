@@ -8,6 +8,7 @@
   import Select from '$lib/components/ui/select.svelte';
   import RandomizationSettings from '../config/RandomizationSettings.svelte';
   import ProgressiveRateSettings from '../config/ProgressiveRateSettings.svelte';
+  import SwarmPacingSettings from '../config/SwarmPacingSettings.svelte';
   import StopConditionSettings from '../config/StopConditionSettings.svelte';
   import GridClientConfigFields from './GridClientConfigFields.svelte';
   import { builtInPresets } from '$lib/presets/index.js';
@@ -61,6 +62,12 @@
   let targetUploadRate = $state(100);
   let targetDownloadRate = $state(200);
   let progressiveDurationHours = $state(1);
+  let swarmPacingEnabled = $state(false);
+  let swarmMaxPeers = $state(8);
+  let swarmResampleIntervalSecs = $state(120);
+  let swarmEpsilonMinPercent = $state(1.0);
+  let swarmPhaseMinOursPercent = $state(90.0);
+  let swarmPhaseMinSeedFraction = $state(0.7);
   let stopAtRatioEnabled = $state(false);
   let stopAtRatio = $state(2.0);
   let randomizeRatio = $state(false);
@@ -126,6 +133,7 @@
     const timing = sections.timing?.value || {};
     const randomization = sections.randomization?.value || {};
     const progressive = sections.progressive?.value || {};
+    const swarm = sections.swarm?.value || {};
     const stopConditions = sections.stopConditions?.value || {};
 
     clientValue = client.selectedClient || 'qbittorrent';
@@ -144,6 +152,12 @@
     targetUploadRate = progressive.targetUploadRate ?? 100;
     targetDownloadRate = progressive.targetDownloadRate ?? 200;
     progressiveDurationHours = progressive.progressiveDurationHours ?? 1;
+    swarmPacingEnabled = swarm.swarmPacingEnabled ?? true;
+    swarmMaxPeers = swarm.swarmMaxPeers;
+    swarmResampleIntervalSecs = swarm.swarmResampleIntervalSecs;
+    swarmEpsilonMinPercent = swarm.swarmEpsilonMinPercent;
+    swarmPhaseMinOursPercent = swarm.swarmPhaseMinOursPercent;
+    swarmPhaseMinSeedFraction = swarm.swarmPhaseMinSeedFraction;
     stopAtRatioEnabled = stopConditions.stopAtRatioEnabled ?? false;
     stopAtRatio = stopConditions.stopAtRatio ?? 2.0;
     randomizeRatio = stopConditions.randomizeRatio ?? false;
@@ -214,6 +228,12 @@
       idleWhenNoLeechers: config.idle_when_no_leechers || false,
       idleWhenNoSeeders: config.idle_when_no_seeders || false,
       minLeechers: config.min_leechers || 0,
+      swarmPacingEnabled: config.swarm_pacing_enabled ?? true,
+      swarmMaxPeers: config.swarm_max_peers ?? 8,
+      swarmResampleIntervalSecs: config.swarm_resample_interval_secs ?? 120,
+      swarmEpsilonMinPercent: config.swarm_epsilon_min_percent ?? 1.0,
+      swarmPhaseMinOursPercent: config.swarm_phase_min_ours_percent ?? 90.0,
+      swarmPhaseMinSeedFraction: config.swarm_phase_min_seed_fraction ?? 0.7,
       maxSeederLeecherRatio: config.max_seeder_leecher_ratio ?? null,
       postStopAction: config.post_stop_action || 'idle',
       progressiveRatesEnabled: config.progressive_rates || false,
@@ -260,6 +280,12 @@
       targetUploadRate: 100,
       targetDownloadRate: 200,
       progressiveDurationHours: 1,
+      swarmPacingEnabled: false,
+      swarmMaxPeers: 8,
+      swarmResampleIntervalSecs: 120,
+      swarmEpsilonMinPercent: 1.0,
+      swarmPhaseMinOursPercent: 90.0,
+      swarmPhaseMinSeedFraction: 0.7,
     };
   }
 
@@ -294,6 +320,12 @@
       idleWhenNoLeechers: instance.idleWhenNoLeechers,
       idleWhenNoSeeders: instance.idleWhenNoSeeders,
       minLeechers: instance.minLeechers ?? 0,
+      swarmPacingEnabled: instance.swarmPacingEnabled ?? true,
+      swarmMaxPeers: instance.swarmMaxPeers ?? 8,
+      swarmResampleIntervalSecs: instance.swarmResampleIntervalSecs ?? 120,
+      swarmEpsilonMinPercent: instance.swarmEpsilonMinPercent ?? 1.0,
+      swarmPhaseMinOursPercent: instance.swarmPhaseMinOursPercent ?? 90.0,
+      swarmPhaseMinSeedFraction: instance.swarmPhaseMinSeedFraction ?? 0.7,
       maxSeederLeecherRatio: instance.maxSeederLeecherRatio ?? null,
       postStopAction: instance.postStopAction,
       progressiveRatesEnabled: instance.progressiveRatesEnabled,
@@ -776,6 +808,45 @@
               {uploadRate}
               {downloadRate}
               onchange={updates => autoEnable('progressive', updates)}
+            />
+          </div>
+        </section>
+
+        <section class="rounded-lg border border-border overflow-hidden">
+          <div
+            class="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-3"
+          >
+            <div class="flex items-center gap-2">
+              <Checkbox
+                checked={sections.swarm.apply}
+                aria-label="Override swarm pacing"
+                onchange={checked => setSectionApply('swarm', checked)}
+              />
+              <div>
+                <div class="flex items-center gap-2 text-sm font-medium">
+                  <span>Override</span>
+                  <span>Swarm Pacing</span>
+                </div>
+                <div class="text-xs text-muted-foreground">
+                  {sections.swarm.mixed
+                    ? 'Mixed current values across selection'
+                    : 'Same current value across selection'}
+                </div>
+              </div>
+            </div>
+            <span class="text-[11px] text-muted-foreground"
+              >{sections.swarm.apply ? 'Will apply' : 'Skipped'}</span
+            >
+          </div>
+          <div class="p-4">
+            <SwarmPacingSettings
+              bind:enabled={swarmPacingEnabled}
+              bind:maxPeers={swarmMaxPeers}
+              bind:resampleIntervalSecs={swarmResampleIntervalSecs}
+              bind:epsilonMinPercent={swarmEpsilonMinPercent}
+              bind:phaseMinOursPercent={swarmPhaseMinOursPercent}
+              bind:phaseMinSeedFraction={swarmPhaseMinSeedFraction}
+              onchange={updates => autoEnable('swarm', updates)}
             />
           </div>
         </section>

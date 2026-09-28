@@ -22,6 +22,9 @@
     FolderSearch,
     Settings,
     Github,
+    Moon,
+    Turtle,
+    List,
     LayoutGrid,
     AlertTriangle,
   } from '@lucide/svelte';

@@ -5,6 +5,7 @@ pub mod logger;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod peer_listener;
 pub mod protocol;
+pub mod swarm_sample;
 pub mod torrent;
 pub mod validation;
 

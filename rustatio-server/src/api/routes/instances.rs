@@ -242,6 +242,31 @@ pub async fn get_instance_torrent(
 
 #[utoipa::path(
     get,
+    path = "/instances/{id}/swarm",
+    tag = "instances",
+    summary = "Get latest swarm completion sample for an instance",
+    security(("bearer_auth" = [])),
+    params(
+        ("id" = String, Path, description = "Instance ID")
+    ),
+    responses(
+        (status = 200, description = "Swarm sample", body = Object),
+        (status = 401, description = "Unauthorized", body = ApiError),
+        (status = 404, description = "Instance not found", body = ApiError),
+    )
+)]
+pub async fn get_instance_swarm(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> Response {
+    match state.app.get_swarm_snapshot(&id).await {
+        Ok(snapshot) => ApiSuccess::response(snapshot),
+        Err(e) => ApiError::response(StatusCode::NOT_FOUND, e),
+    }
+}
+
+#[utoipa::path(
+    get,
     path = "/instances/{id}/torrent-summary",
     tag = "instances",
     summary = "Get torrent summary for an instance",
@@ -269,6 +294,7 @@ pub fn router() -> Router<ServerState> {
     Router::new()
         .route("/instances/{id}/torrent", get(get_instance_torrent).post(load_instance_torrent))
         .route("/instances/{id}/torrent-summary", get(get_instance_torrent_summary))
+        .route("/instances/{id}/swarm", get(get_instance_swarm))
         .layer(DefaultBodyLimit::max(500 * 1024 * 1024))
         .route("/instances", get(list_instances).post(create_instance))
         .route("/instances/{id}", delete(delete_instance))
