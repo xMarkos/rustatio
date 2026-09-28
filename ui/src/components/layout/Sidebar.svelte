@@ -22,6 +22,7 @@
     Settings,
     Github,
     Moon,
+    Turtle,
     List,
     LayoutGrid,
     FolderSearch,
@@ -295,6 +296,7 @@
     if (instance.isRunning) {
       if (instance.isPaused) return 'paused';
       if (instance.stats?.is_idling) return 'idling';
+      if (instance.stats?.is_paced) return 'paced';
       return 'running';
     }
     return 'idle';
@@ -661,6 +663,7 @@
                     status === 'idle' && 'text-muted-foreground',
                     status === 'running' && 'text-stat-upload animate-pulse-slow',
                     status === 'idling' && 'text-violet-500',
+                    status === 'paced' && 'text-stat-download',
                     status === 'paused' && 'text-stat-ratio'
                   )}
                 >
@@ -668,6 +671,8 @@
                     <Circle size={10} fill="currentColor" />
                   {:else if status === 'idling'}
                     <Moon size={10} fill="currentColor" />
+                  {:else if status === 'paced'}
+                    <Turtle size={10} />
                   {:else if status === 'paused'}
                     <Pause size={10} fill="currentColor" />
                   {:else}

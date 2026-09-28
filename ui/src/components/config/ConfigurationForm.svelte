@@ -11,6 +11,7 @@
   import VersionSelect from './VersionSelect.svelte';
   import RandomizationSettings from './RandomizationSettings.svelte';
   import ProgressiveRateSettings from './ProgressiveRateSettings.svelte';
+  import SwarmPacingSettings from './SwarmPacingSettings.svelte';
 
   let {
     clients,
@@ -36,6 +37,12 @@
     targetUploadRate,
     targetDownloadRate,
     progressiveDurationHours,
+    swarmPacingEnabled,
+    swarmMaxPeers,
+    swarmResampleIntervalSecs,
+    swarmEpsilonMinPercent,
+    swarmPhaseMinOursPercent,
+    swarmPhaseMinSeedFraction,
     isRunning,
     onUpdate,
   } = $props();
@@ -57,6 +64,12 @@
   let localTargetUploadRate = $state(100);
   let localTargetDownloadRate = $state(200);
   let localProgressiveDurationHours = $state(1);
+  let localSwarmPacingEnabled = $state(false);
+  let localSwarmMaxPeers = $state(8);
+  let localSwarmResampleIntervalSecs = $state(120);
+  let localSwarmEpsilonMinPercent = $state(1.0);
+  let localSwarmPhaseMinOursPercent = $state(90.0);
+  let localSwarmPhaseMinSeedFraction = $state(0.7);
 
   // Track if we're currently editing to prevent external updates from interfering
   let isEditing = $state(false);
@@ -83,6 +96,12 @@
       localTargetUploadRate = targetUploadRate;
       localTargetDownloadRate = targetDownloadRate;
       localProgressiveDurationHours = progressiveDurationHours;
+      localSwarmPacingEnabled = swarmPacingEnabled;
+      localSwarmMaxPeers = swarmMaxPeers;
+      localSwarmResampleIntervalSecs = swarmResampleIntervalSecs;
+      localSwarmEpsilonMinPercent = swarmEpsilonMinPercent;
+      localSwarmPhaseMinOursPercent = swarmPhaseMinOursPercent;
+      localSwarmPhaseMinSeedFraction = swarmPhaseMinSeedFraction;
     }
   });
 
@@ -527,7 +546,7 @@
   </div>
 
   <!-- Progressive Rates -->
-  <div class="mb-0">
+  <div class="mb-3">
     <ProgressiveRateSettings
       bind:enabled={localProgressiveRatesEnabled}
       bind:durationHours={localProgressiveDurationHours}
@@ -536,6 +555,24 @@
       uploadRate={localUploadRate}
       downloadRate={localDownloadRate}
       disabled={isRunning}
+      onchange={updates => {
+        for (const [key, value] of Object.entries(updates)) updateValue(key, value);
+      }}
+    />
+  </div>
+
+  <!-- Swarm pacing -->
+  <div class="mb-0">
+    <SwarmPacingSettings
+      bind:enabled={localSwarmPacingEnabled}
+      bind:maxPeers={localSwarmMaxPeers}
+      bind:resampleIntervalSecs={localSwarmResampleIntervalSecs}
+      bind:epsilonMinPercent={localSwarmEpsilonMinPercent}
+      bind:phaseMinOursPercent={localSwarmPhaseMinOursPercent}
+      bind:phaseMinSeedFraction={localSwarmPhaseMinSeedFraction}
+      disabled={isRunning}
+      onfocus={handleFocus}
+      onblur={handleBlur}
       onchange={updates => {
         for (const [key, value] of Object.entries(updates)) updateValue(key, value);
       }}

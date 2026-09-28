@@ -175,6 +175,8 @@
         return LoaderCircle;
       case 'running':
         return Circle;
+      case 'paced':
+        return Circle;
       case 'paused':
         return Pause;
       case 'idle':
@@ -194,6 +196,8 @@
         return 'text-stat-danger';
       case 'running':
         return 'text-stat-upload';
+      case 'paced':
+        return 'text-stat-download';
       case 'paused':
         return 'text-stat-ratio';
       case 'idle':
@@ -460,6 +464,7 @@
                   <StateIcon
                     size={11}
                     fill={instance.state?.toLowerCase() === 'running' ||
+                    instance.state?.toLowerCase() === 'paced' ||
                     instance.state?.toLowerCase() === 'idle'
                       ? 'currentColor'
                       : 'none'}

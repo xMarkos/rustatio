@@ -1,6 +1,6 @@
 <script>
   import { cn } from '$lib/utils.js';
-  import { Play, Pause, Square, RefreshCw, Rocket, Moon } from '@lucide/svelte';
+  import { Play, Pause, Square, RefreshCw, Rocket, Moon, Turtle } from '@lucide/svelte';
 
   let {
     statusMessage,
@@ -40,6 +40,12 @@
       frame: 'border-stat-ratio/20',
       chip: 'border-stat-ratio/25 bg-stat-ratio/10 text-stat-ratio',
       dot: 'bg-stat-ratio',
+    },
+    paced: {
+      label: 'Paced',
+      frame: 'border-stat-download/20',
+      chip: 'border-stat-download/25 bg-stat-download/10 text-stat-download',
+      dot: 'bg-stat-download',
     },
     success: {
       label: 'Done',
@@ -109,6 +115,8 @@
           <Rocket size={13} class="flex-shrink-0" />
         {:else if statusIcon === 'moon'}
           <Moon size={13} class="flex-shrink-0" />
+        {:else if statusIcon === 'turtle'}
+          <Turtle size={13} class="flex-shrink-0" />
         {:else if statusIcon === 'pause'}
           <Pause size={13} class="flex-shrink-0" fill="currentColor" />
         {:else}

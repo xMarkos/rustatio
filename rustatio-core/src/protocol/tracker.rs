@@ -4,6 +4,7 @@ use crate::{log_debug, log_error, log_info, log_trace, log_warn};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -90,6 +91,8 @@ pub struct AnnounceRequest {
     pub no_peer_id: bool,
     pub event: TrackerEvent,
     pub ip: Option<String>,
+    pub ipv4: Option<String>,
+    pub ipv6: Option<String>,
     pub numwant: Option<u32>,
     pub key: Option<String>,
     pub tracker_id: Option<String>,
@@ -117,6 +120,10 @@ pub struct AnnounceResponse {
     /// Warning message
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
+
+    /// Peers from this announce (compact or dict form), may be empty
+    #[serde(default)]
+    pub peers: Vec<SocketAddr>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,6 +132,102 @@ pub struct ScrapeResponse {
     pub incomplete: i64,
     pub downloaded: i64,
     pub name: Option<String>,
+}
+
+/// Our egress addresses toward a tracker, discovered by UDP route lookup
+/// (connect() sends no packets; it only resolves the egress interface).
+/// Returns (ipv4, ipv6); a family without a route resolves to None so the
+/// caller omits that announce param. No external services involved.
+pub fn egress_addrs_for_tracker(tracker_url: &str) -> (Option<String>, Option<String>) {
+    let host = tracker_host(tracker_url);
+    if host.is_empty() {
+        return (None, None);
+    }
+    let probe = |bind: &str| {
+        let sock = std::net::UdpSocket::bind(bind).ok()?;
+        sock.connect((host, 80)).ok()?;
+        let ip = sock.local_addr().ok()?.ip();
+        if !is_public_ip(&ip) {
+            return None;
+        }
+        Some(ip.to_string())
+    };
+    (probe("0.0.0.0:0"), probe("[::]:0"))
+}
+
+/// Globally routable addresses only: never announce private, loopback,
+/// link-local, unspecified, multicast, or documentation ranges.
+fn is_public_ip(ip: &std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v) => {
+            !v.is_private()
+                && !v.is_loopback()
+                && !v.is_link_local()
+                && !v.is_broadcast()
+                && !v.is_documentation()
+                && !v.is_unspecified()
+        }
+        std::net::IpAddr::V6(v) => {
+            let segs = v.segments();
+            !v.is_loopback()
+                && !v.is_unspecified()
+                && !v.is_multicast()
+                && (segs[0] & 0xffc0) != 0xfe80 // unicast link-local fe80::/10
+                && (segs[0] & 0xfe00) != 0xfc00 // unique local fc00::/7
+                && !(segs[0] == 0x2001 && segs[1] == 0x0db8) // documentation 2001:db8::/32
+        }
+    }
+}
+
+/// Helper services reporting our public address as seen from the internet.
+/// Bodies are CSV (`IPv4,203.0.113.7,v1.1,...`); the address is the second
+/// field. Queried only for families without a public egress route.
+const IPV4_PROBE_URL: &str = "https://ip4only.me/api/";
+const IPV6_PROBE_URL: &str = "https://ip6only.me/api/";
+
+/// Best-effort public addresses for families lacking a public egress route.
+/// Returns (ipv4, ipv6) for the caller to cache; any failure resolves to
+/// None so the param is omitted rather than guessed.
+pub async fn probe_public_addrs(tracker_url: &str) -> (Option<String>, Option<String>) {
+    let (local_v4, local_v6) = egress_addrs_for_tracker(tracker_url);
+    let builder = reqwest::Client::builder();
+    #[cfg(not(target_arch = "wasm32"))]
+    let builder = builder.timeout(std::time::Duration::from_secs(8));
+    let client = match builder.build() {
+        Ok(c) => c,
+        Err(_) => return (None, None),
+    };
+    let v4 =
+        if local_v4.is_none() { probe_one(&client, IPV4_PROBE_URL, false).await } else { None };
+    let v6 = if local_v6.is_none() { probe_one(&client, IPV6_PROBE_URL, true).await } else { None };
+    (v4, v6)
+}
+
+async fn probe_one(client: &reqwest::Client, url: &str, want_v6: bool) -> Option<String> {
+    let text = client.get(url).send().await.ok()?.text().await.ok()?;
+    parse_probe_body(&text, want_v6)
+}
+
+fn parse_probe_body(text: &str, want_v6: bool) -> Option<String> {
+    // Plain IP, or CSV with the address in the second field.
+    let candidate = text.split(',').nth(1).unwrap_or(text);
+    let ip: std::net::IpAddr = candidate.trim().parse().ok()?;
+    if ip.is_ipv6() != want_v6 || !is_public_ip(&ip) {
+        return None;
+    }
+    Some(ip.to_string())
+}
+
+fn tracker_host(tracker_url: &str) -> &str {
+    let after_scheme = tracker_url.split("://").nth(1).unwrap_or(tracker_url);
+    let authority = after_scheme.split(['/', '?', '#']).next().unwrap_or("");
+    let authority = authority.split('@').next_back().unwrap_or(authority);
+    if let Some(rest) = authority.strip_prefix('[') {
+        let end = rest.find(']').unwrap_or(rest.len());
+        &rest[..end]
+    } else {
+        authority.split(':').next().unwrap_or(authority)
+    }
 }
 
 pub struct TrackerClient<C: HttpClient = ReqwestHttpClient> {
@@ -244,6 +347,14 @@ impl<C: HttpClient> TrackerClient<C> {
             params.push(format!("ip={ip}"));
         }
 
+        if let Some(ref ipv4) = request.ipv4 {
+            params.push(format!("ipv4={ipv4}"));
+        }
+
+        if let Some(ref ipv6) = request.ipv6 {
+            params.push(format!("ipv6={ipv6}"));
+        }
+
         if let Some(numwant) = request.numwant {
             params.push(format!("numwant={numwant}"));
         }
@@ -346,7 +457,67 @@ impl<C: HttpClient> TrackerClient<C> {
             _ => None,
         });
 
-        Ok(AnnounceResponse { interval, min_interval, tracker_id, complete, incomplete, warning })
+        let peers = Self::parse_peers(dict);
+        Ok(AnnounceResponse {
+            interval,
+            min_interval,
+            tracker_id,
+            complete,
+            incomplete,
+            warning,
+            peers,
+        })
+    }
+
+    fn parse_peers(
+        dict: &std::collections::HashMap<Vec<u8>, serde_bencode::value::Value>,
+    ) -> Vec<SocketAddr> {
+        let mut out = Vec::new();
+        // IPv4 under "peers": compact 6-byte form + dictionary-list form.
+        if let Some(raw) = dict.get(b"peers".as_ref()) {
+            match raw {
+                // Compact form: 6 bytes per peer (4 IP + 2 port BE).
+                serde_bencode::value::Value::Bytes(b) => {
+                    out.extend(b.chunks_exact(6).filter_map(|c| {
+                        let ip = Ipv4Addr::new(c[0], c[1], c[2], c[3]);
+                        let port = u16::from_be_bytes([c[4], c[5]]);
+                        (port != 0).then(|| SocketAddr::V4(SocketAddrV4::new(ip, port)))
+                    }))
+                }
+                // Dictionary form: [{ip, port}, ...].
+                serde_bencode::value::Value::List(peers) => {
+                    out.extend(peers.iter().filter_map(|p| {
+                        let serde_bencode::value::Value::Dict(d) = p else {
+                            return None;
+                        };
+                        let ip = d.get(b"ip".as_ref()).and_then(|v| match v {
+                            serde_bencode::value::Value::Bytes(b) => {
+                                String::from_utf8_lossy(b).parse().ok()
+                            }
+                            _ => None,
+                        })?;
+                        let port = d.get(b"port".as_ref()).and_then(|v| match v {
+                            serde_bencode::value::Value::Int(i) => u16::try_from(*i).ok(),
+                            _ => None,
+                        })?;
+                        (port != 0).then(|| SocketAddr::new(ip, port))
+                    }));
+                }
+                _ => {}
+            }
+        }
+        // IPv6 under "peers6": compact 18 bytes per peer (16 IP + 2 port BE).
+        if let Some(serde_bencode::value::Value::Bytes(b)) = dict.get(b"peers6".as_ref()) {
+            out.extend(b.chunks_exact(18).filter_map(|c| {
+                let ip = Ipv6Addr::from([
+                    c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11],
+                    c[12], c[13], c[14], c[15],
+                ]);
+                let port = u16::from_be_bytes([c[16], c[17]]);
+                (port != 0).then(|| SocketAddr::V6(SocketAddrV6::new(ip, port, 0, 0)))
+            }));
+        }
+        out
     }
 
     /// Parse scrape response from bencoded data
@@ -522,6 +693,8 @@ mod tests {
             no_peer_id: true,
             event: TrackerEvent::Started,
             ip: Some("1.2.3.4".to_string()),
+            ipv4: None,
+            ipv6: None,
             numwant: Some(50),
             key: Some("abc".to_string()),
             tracker_id: Some("id".to_string()),
@@ -576,6 +749,76 @@ mod tests {
     }
 
     #[test]
+    fn test_build_announce_url_ipv4_ipv6_params() -> Result<()> {
+        let client = client()?;
+        let mut r = req(hash());
+        r.ipv4 = Some("109.81.3.4".to_string());
+        r.ipv6 = Some("2001:db8::7".to_string());
+        let url = client.build_announce_url("https://tracker.test/announce", &r);
+        assert!(url.contains("ipv4=109.81.3.4"));
+        assert!(url.contains("ipv6=2001:db8::7"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_public_ip_filters() {
+        use std::net::IpAddr;
+        for s in [
+            "10.0.0.1",
+            "192.168.1.1",
+            "172.16.0.1",
+            "127.0.0.1",
+            "0.0.0.0",
+            "255.255.255.255",
+            "203.0.113.7",
+            "::1",
+            "::",
+            "fe80::1",
+            "fc00::1",
+            "ff02::1",
+            "2001:db8::1",
+        ] {
+            let ip: IpAddr = s.parse().unwrap();
+            assert!(!is_public_ip(&ip), "{s} must never be announced");
+        }
+        for s in ["8.8.8.8", "1.1.1.1", "2001:4860:4860::8888", "2a00:1028:8388:d996::d"] {
+            let ip: IpAddr = s.parse().unwrap();
+            assert!(is_public_ip(&ip), "{s} must be announcable");
+        }
+    }
+
+    #[test]
+    fn test_parse_probe_body_shapes() {
+        // Exact live bodies observed from the helper services.
+        assert_eq!(
+            parse_probe_body(
+                "IPv4,109.81.3.4,v1.1,,,See http://ip6.me/docs/ for api documentation",
+                false
+            ),
+            Some("109.81.3.4".to_string())
+        );
+        assert_eq!(
+            parse_probe_body(
+                "IPv6,2a00:1028:8388:d996::d,v1.1,,,See http://ip6.me/docs/ for api documentation",
+                true
+            ),
+            Some("2a00:1028:8388:d996::d".to_string())
+        );
+        // Plain IP with trailing newline also accepted.
+        assert_eq!(parse_probe_body("109.81.3.4\n", false), Some("109.81.3.4".to_string()));
+        // Wrong family, private address, and garbage all rejected.
+        assert_eq!(parse_probe_body("IPv4,109.81.3.4,v1.1", true), None);
+        assert_eq!(parse_probe_body("IPv4,10.0.0.1,v1.1", false), None);
+        assert_eq!(parse_probe_body("nonsense", false), None);
+    }
+
+    #[test]
+    fn test_egress_addrs_invalid_host() {
+        // .invalid never resolves: both families omitted, no network touched.
+        assert_eq!(egress_addrs_for_tracker("https://tracker.invalid/announce"), (None, None));
+    }
+
+    #[test]
     fn test_build_announce_url_query_separator() -> Result<()> {
         let client = client()?;
         let hash = hash();
@@ -611,6 +854,47 @@ mod tests {
         assert_eq!(res.complete, 5);
         assert_eq!(res.incomplete, 3);
         assert_eq!(res.warning.as_deref(), Some("be care"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_announce_response_compact_peers() -> Result<()> {
+        let client = client()?;
+        let data =
+            b"d8:intervali1800e8:completei1e10:incompletei0e5:peers6:\x01\x02\x03\x04\x1a\xe1e";
+        let res = client.parse_announce_response(data)?;
+        assert_eq!(res.peers.len(), 1);
+        assert_eq!(res.peers[0].to_string(), "1.2.3.4:6881");
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_announce_response_dict_peers() -> Result<()> {
+        let client = client()?;
+        let data =
+            b"d8:intervali1800e8:completei1e10:incompletei0e5:peersld2:ip8:10.0.0.14:porti51413eeee";
+        let res = client.parse_announce_response(data)?;
+        assert_eq!(res.peers.len(), 1);
+        assert_eq!(res.peers[0].to_string(), "10.0.0.1:51413");
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_announce_response_compact_peers6() -> Result<()> {
+        let client = client()?;
+        let data = b"d8:intervali1800e8:completei1e10:incompletei0e6:peers618: \x01\r\xb8\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x1a\xe1e";
+        let res = client.parse_announce_response(data)?;
+        assert_eq!(res.peers.len(), 1);
+        assert_eq!(res.peers[0].to_string(), "[2001:db8::1]:6881");
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_announce_response_no_peers() -> Result<()> {
+        let client = client()?;
+        let data = b"d8:intervali1800e8:completei1e10:incompletei0ee";
+        let res = client.parse_announce_response(data)?;
+        assert!(res.peers.is_empty());
         Ok(())
     }
 

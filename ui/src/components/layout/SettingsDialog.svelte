@@ -20,7 +20,16 @@
     normalizePresetSettings,
   } from '$lib/customPreset.js';
   import { THEMES, THEME_CATEGORIES, getTheme, selectTheme } from '$lib/themeStore.svelte.js';
-  import { Settings, X, Check, Trash2, Download, Upload, Save } from '@lucide/svelte';
+  import {
+    Settings,
+    X,
+    Check,
+    Trash2,
+    Download,
+    Upload,
+    Save,
+    Network,
+  } from '@lucide/svelte';
   import PresetIcon from '../config/PresetIcon.svelte';
 
   let { isOpen = $bindable(false) } = $props();
@@ -679,7 +688,8 @@
                       >↑ {preset.settings.uploadRate} KB/s</span
                     >
                     <span class="px-2 py-1 bg-muted rounded"
-                      >↓ {preset.settings.downloadRate} KB/s</span
+                      >↓ {preset.settings.downloadRate} KB/s{#if preset.settings.swarmPacingEnabled}
+                        <Network size={12} class="inline-block align-[-2px]" />{/if}</span
                     >
                     {#if preset.settings.randomizeRates}
                       <span class="px-2 py-1 bg-muted rounded"
@@ -821,7 +831,8 @@
                         >↑ {preset.settings.uploadRate} KB/s</span
                       >
                       <span class="px-2 py-1 bg-muted rounded"
-                        >↓ {preset.settings.downloadRate} KB/s</span
+                        >↓ {preset.settings.downloadRate} KB/s{#if preset.settings.swarmPacingEnabled}
+                        <Network size={12} class="inline-block align-[-2px]" />{/if}</span
                       >
                       {#if preset.settings.randomizeRates}
                         <span class="px-2 py-1 bg-muted rounded"
