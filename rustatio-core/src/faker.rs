@@ -100,7 +100,7 @@ pub struct FakerConfig {
     #[serde(default)]
     pub idle_when_no_leechers: bool,
 
-    /// Idle (0 KB/s download) when there are no seeders - stays connected for bonus points (optional, default false)
+    /// Idle (0 KB/s up/down) when there are no seeders - never seed without a seed present (optional, default false)
     #[serde(default)]
     pub idle_when_no_seeders: bool,
 
@@ -1099,6 +1099,7 @@ impl RatioFaker {
                 inputs.announce_count
             );
             download = 0.0;
+            upload = 0.0;
             if !is_idling {
                 is_idling = true;
                 idling_reason = Some("no_seeders".to_string());
@@ -2018,6 +2019,28 @@ mod tests {
         assert_eq!(config.upload_rate, 50.0);
         assert_eq!(config.download_rate, 100.0);
         assert!(!config.vpn_port_sync);
+    }
+
+    #[test]
+    fn idle_when_no_seeders_zeroes_upload_and_download() {
+        let config = FakerConfig { idle_when_no_seeders: true, ..Default::default() };
+        let inputs = TickInputs {
+            elapsed: Duration::from_secs(60),
+            elapsed_secs: 60,
+            left: 1024,
+            seeders: 0,
+            leechers: 5,
+            announce_count: 2,
+            torrent_size: 2048,
+            start_time: Instant::now(),
+            config,
+        };
+        let (upload, download, is_idling, reason) =
+            RatioFaker::apply_idling_rules(&inputs, 100.0, 50.0);
+        assert_eq!(upload, 0.0);
+        assert_eq!(download, 0.0);
+        assert!(is_idling);
+        assert_eq!(reason.as_deref(), Some("no_seeders"));
     }
 
     #[test]
