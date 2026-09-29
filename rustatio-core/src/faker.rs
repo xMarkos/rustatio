@@ -104,6 +104,14 @@ pub struct FakerConfig {
     #[serde(default)]
     pub idle_when_no_seeders: bool,
 
+    /// Idle (0 KB/s up/down) when fewer than this many leechers are present - guards against phantom-leecher seeding (optional, default 0 = disabled)
+    #[serde(default)]
+    pub min_leechers: u64,
+
+    /// Idle upload (0 KB/s) when seeders/leechers ratio exceeds this value - guards against seeding into top-heavy swarms (optional, default None = disabled)
+    #[serde(default)]
+    pub max_seeder_leecher_ratio: Option<f64>,
+
     /// Interval in seconds between scrape requests for peer count updates (default: 60)
     #[serde(default = "default_scrape_interval")]
     pub scrape_interval: u64,
@@ -155,6 +163,8 @@ pub struct PresetSettings {
     pub stop_at_seed_time_hours: Option<f64>,
     pub idle_when_no_leechers: Option<bool>,
     pub idle_when_no_seeders: Option<bool>,
+    pub min_leechers: Option<u64>,
+    pub max_seeder_leecher_ratio: Option<f64>,
     pub post_stop_action: Option<String>,
     // Progressive rates
     pub progressive_rates_enabled: Option<bool>,
@@ -208,6 +218,8 @@ impl From<PresetSettings> for FakerConfig {
             stop_at_seed_time,
             idle_when_no_leechers: p.idle_when_no_leechers.unwrap_or(false),
             idle_when_no_seeders: p.idle_when_no_seeders.unwrap_or(false),
+            min_leechers: p.min_leechers.unwrap_or(0),
+            max_seeder_leecher_ratio: p.max_seeder_leecher_ratio,
             scrape_interval: 60,
             post_stop_action: match p.post_stop_action.as_deref() {
                 Some("stop_seeding") => PostStopAction::StopSeeding,
@@ -266,6 +278,8 @@ impl Default for FakerConfig {
             stop_at_seed_time: None,
             idle_when_no_leechers: false,
             idle_when_no_seeders: false,
+            min_leechers: 0,
+            max_seeder_leecher_ratio: None,
             scrape_interval: 60,
             progressive_rates: false,
             target_upload_rate: None,
@@ -1076,15 +1090,20 @@ impl RatioFaker {
 
         let config = &inputs.config;
 
-        if config.idle_when_no_leechers && inputs.leechers == 0 && inputs.announce_count > 0 {
+        // Threshold generalizes the classic flag: flag alone means "at least 1".
+        let min_leechers =
+            config.min_leechers.max(if config.idle_when_no_leechers { 1 } else { 0 });
+        if min_leechers > 0 && inputs.leechers < min_leechers as i64 && inputs.announce_count > 0 {
+            let reason = if inputs.leechers == 0 { "no_leechers" } else { "low_leechers" };
             log_debug!(
-                "Idling: no leechers to upload to (leechers={}, announce_count={})",
+                "Idling: leechers below threshold (leechers={}, min={}, announce_count={})",
                 inputs.leechers,
+                min_leechers,
                 inputs.announce_count
             );
             upload = 0.0;
             is_idling = true;
-            idling_reason = Some("no_leechers".to_string());
+            idling_reason = Some(reason.to_string());
         }
 
         if config.idle_when_no_seeders
@@ -1103,6 +1122,29 @@ impl RatioFaker {
             if !is_idling {
                 is_idling = true;
                 idling_reason = Some("no_seeders".to_string());
+            }
+        }
+
+        // Zero leechers counts as infinite ratio; a lone-seeder swarm is never
+        // a safe place to upload. Download is unaffected: many seeders are
+        // ideal for downloading, dangerous only for seeding.
+        if let Some(max_ratio) = config.max_seeder_leecher_ratio {
+            let ratio_violated = max_ratio > 0.0
+                && inputs.announce_count > 0
+                && (inputs.leechers <= 0
+                    || inputs.seeders as f64 / inputs.leechers as f64 > max_ratio);
+            if ratio_violated {
+                log_debug!(
+                    "Idling: seeder/leecher ratio too high (seeders={}, leechers={}, max={})",
+                    inputs.seeders,
+                    inputs.leechers,
+                    max_ratio
+                );
+                upload = 0.0;
+                if !is_idling {
+                    is_idling = true;
+                    idling_reason = Some("high_seeder_ratio".to_string());
+                }
             }
         }
 
@@ -2041,6 +2083,96 @@ mod tests {
         assert_eq!(download, 0.0);
         assert!(is_idling);
         assert_eq!(reason.as_deref(), Some("no_seeders"));
+    }
+
+    #[test]
+    fn min_leechers_threshold_idles_upload() {
+        let config = FakerConfig { min_leechers: 5, ..Default::default() };
+        let inputs = TickInputs {
+            elapsed: Duration::from_secs(60),
+            elapsed_secs: 60,
+            left: 0,
+            seeders: 10,
+            leechers: 2,
+            announce_count: 2,
+            torrent_size: 2048,
+            start_time: Instant::now(),
+            config,
+        };
+        let (upload, _download, is_idling, reason) =
+            RatioFaker::apply_idling_rules(&inputs, 100.0, 50.0);
+        assert_eq!(upload, 0.0);
+        assert!(is_idling);
+        assert_eq!(reason.as_deref(), Some("low_leechers"));
+    }
+
+    #[test]
+    fn classic_no_leechers_flag_keeps_reason() {
+        let config = FakerConfig { idle_when_no_leechers: true, ..Default::default() };
+        let inputs = TickInputs {
+            elapsed: Duration::from_secs(60),
+            elapsed_secs: 60,
+            left: 0,
+            seeders: 3,
+            leechers: 0,
+            announce_count: 1,
+            torrent_size: 2048,
+            start_time: Instant::now(),
+            config,
+        };
+        let (upload, _download, is_idling, reason) =
+            RatioFaker::apply_idling_rules(&inputs, 100.0, 50.0);
+        assert_eq!(upload, 0.0);
+        assert!(is_idling);
+        assert_eq!(reason.as_deref(), Some("no_leechers"));
+    }
+
+    #[test]
+    fn high_seeder_ratio_idles_upload_only() {
+        let config = FakerConfig { max_seeder_leecher_ratio: Some(10.0), ..Default::default() };
+        let inputs = TickInputs {
+            elapsed: Duration::from_secs(60),
+            elapsed_secs: 60,
+            left: 1024,
+            seeders: 500,
+            leechers: 2,
+            announce_count: 2,
+            torrent_size: 2048,
+            start_time: Instant::now(),
+            config,
+        };
+        let (upload, download, is_idling, reason) =
+            RatioFaker::apply_idling_rules(&inputs, 100.0, 50.0);
+        assert_eq!(upload, 0.0);
+        assert_eq!(download, 50.0);
+        assert!(is_idling);
+        assert_eq!(reason.as_deref(), Some("high_seeder_ratio"));
+    }
+
+    #[test]
+    fn healthy_ratio_preserves_rates() {
+        let config = FakerConfig {
+            max_seeder_leecher_ratio: Some(10.0),
+            min_leechers: 2,
+            ..Default::default()
+        };
+        let inputs = TickInputs {
+            elapsed: Duration::from_secs(60),
+            elapsed_secs: 60,
+            left: 1024,
+            seeders: 10,
+            leechers: 5,
+            announce_count: 2,
+            torrent_size: 2048,
+            start_time: Instant::now(),
+            config,
+        };
+        let (upload, download, is_idling, reason) =
+            RatioFaker::apply_idling_rules(&inputs, 100.0, 50.0);
+        assert_eq!(upload, 100.0);
+        assert_eq!(download, 50.0);
+        assert!(!is_idling);
+        assert!(reason.is_none());
     }
 
     #[test]

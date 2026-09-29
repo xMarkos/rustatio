@@ -27,6 +27,8 @@
     stopAtSeedTimeHours = $bindable(24),
     idleWhenNoLeechers = $bindable(false),
     idleWhenNoSeeders = $bindable(false),
+    minLeechers = $bindable(0),
+    maxSeederLeecherRatio = $bindable(null),
     postStopAction = $bindable('idle'),
     completionPercent = 100,
     disabled = false,
@@ -304,6 +306,56 @@
     {:else}
       <span class="text-xs text-muted-foreground">disabled</span>
     {/if}
+  </div>
+
+  <!-- Minimum leechers -->
+  <div
+    class="flex items-center gap-3 p-3 border-b border-border {minLeechers > 0
+      ? 'bg-primary/5'
+      : ''}"
+  >
+    <Users size={16} class={minLeechers > 0 ? 'text-teal-500' : 'text-muted-foreground'} />
+    <Label for="min-leechers" class="flex-1 cursor-pointer text-sm font-medium">
+      Minimum leechers
+    </Label>
+    <div class="flex items-center gap-1">
+      <Input
+        type="number"
+        bind:value={minLeechers}
+        {disabled}
+        min="0"
+        step="1"
+        class="w-20 h-8 text-center font-medium"
+        placeholder="0"
+        title="Idle upload when fewer leechers are present (0 = off)"
+        oninput={() => onchange?.({ minLeechers })}
+      />
+    </div>
+  </div>
+
+  <!-- Max seeder/leecher ratio -->
+  <div
+    class="flex items-center gap-3 p-3 border-b border-border {maxSeederLeecherRatio > 0
+      ? 'bg-primary/5'
+      : ''}"
+  >
+    <Users size={16} class={maxSeederLeecherRatio > 0 ? 'text-red-500' : 'text-muted-foreground'} />
+    <Label for="max-seeder-ratio" class="flex-1 cursor-pointer text-sm font-medium">
+      Max seeder/leecher ratio
+    </Label>
+    <div class="flex items-center gap-1">
+      <Input
+        type="number"
+        bind:value={maxSeederLeecherRatio}
+        {disabled}
+        min="0"
+        step="0.5"
+        class="w-20 h-8 text-center font-medium"
+        placeholder="off"
+        title="Idle upload when seeders/leechers exceeds this (empty = off)"
+        oninput={() => onchange?.({ maxSeederLeecherRatio })}
+      />
+    </div>
   </div>
 
   <!-- Post-Stop Action -->

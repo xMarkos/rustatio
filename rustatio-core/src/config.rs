@@ -74,6 +74,10 @@ pub struct InstanceConfig {
     pub idle_when_no_leechers: bool,
     pub idle_when_no_seeders: bool,
     #[serde(default)]
+    pub min_leechers: u64,
+    #[serde(default)]
+    pub max_seeder_leecher_ratio: Option<f64>,
+    #[serde(default)]
     pub post_stop_action: PostStopAction,
     pub progressive_rates_enabled: bool,
     pub target_upload_rate: f64,

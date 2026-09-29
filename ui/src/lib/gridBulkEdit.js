@@ -86,6 +86,8 @@ export function createBulkEditState(instances = []) {
     stopAtSeedTimeHours: inst.stopAtSeedTimeHours,
     idleWhenNoLeechers: inst.idleWhenNoLeechers,
     idleWhenNoSeeders: inst.idleWhenNoSeeders,
+    minLeechers: inst.minLeechers ?? 0,
+    maxSeederLeecherRatio: inst.maxSeederLeecherRatio ?? null,
     postStopAction: inst.postStopAction,
   }));
 
@@ -207,6 +209,8 @@ export function applyPresetToBulkState(state, preset) {
     settings.stopAtSeedTimeHours != null ||
     settings.idleWhenNoLeechers != null ||
     settings.idleWhenNoSeeders != null ||
+    settings.minLeechers != null ||
+    settings.maxSeederLeecherRatio != null ||
     settings.postStopAction != null
   ) {
     next.sections.stopConditions.apply = true;
@@ -247,6 +251,12 @@ export function applyPresetToBulkState(state, preset) {
         : {}),
       ...(settings.idleWhenNoSeeders != null
         ? { idleWhenNoSeeders: settings.idleWhenNoSeeders }
+        : {}),
+      ...(settings.minLeechers != null
+        ? { minLeechers: settings.minLeechers }
+        : {}),
+      ...(settings.maxSeederLeecherRatio != null
+        ? { maxSeederLeecherRatio: settings.maxSeederLeecherRatio }
         : {}),
       ...(settings.postStopAction != null ? { postStopAction: settings.postStopAction } : {}),
     };

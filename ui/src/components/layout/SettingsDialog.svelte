@@ -61,6 +61,17 @@
     localStorage.setItem(CLOSE_BEHAVIOR_KEY, behavior);
   }
 
+  // Idle-guard badge for a preset: 'Idle: No Seeders' when only the
+  // classic flag is set, with ‹min leechers / S/L ›ratio appended.
+  function idleSeedersBadge(settings = {}) {
+    const parts = [];
+    if (settings.idleWhenNoSeeders) parts.push('No Seeders');
+    if (settings.minLeechers > 0) parts.push(`‹${settings.minLeechers} leechers`);
+    if (settings.maxSeederLeecherRatio > 0)
+      parts.push(`S/L ›${settings.maxSeederLeecherRatio}`);
+    return parts.length ? `Idle: ${parts.join(' \u00b7 ')}` : null;
+  }
+
   $effect(() => {
     if (isOpen) {
       closeBehavior = getCloseBehavior();
@@ -711,9 +722,9 @@
                         >Idle: No Leechers</span
                       >
                     {/if}
-                    {#if preset.settings.idleWhenNoSeeders}
+                    {#if idleSeedersBadge(preset.settings)}
                       <span class="px-2 py-1 bg-orange-500/20 text-orange-500 rounded"
-                        >Idle: No Seeders</span
+                        >{idleSeedersBadge(preset.settings)}</span
                       >
                     {/if}
                   </div>
@@ -853,9 +864,9 @@
                           >Idle: No Leechers</span
                         >
                       {/if}
-                      {#if preset.settings.idleWhenNoSeeders}
+                      {#if idleSeedersBadge(preset.settings)}
                         <span class="px-2 py-1 bg-orange-500/20 text-orange-500 rounded"
-                          >Idle: No Seeders</span
+                          >{idleSeedersBadge(preset.settings)}</span
                         >
                       {/if}
                     </div>

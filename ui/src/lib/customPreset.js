@@ -74,6 +74,8 @@ export function buildCustomPreset(instance, { name, description = '', id, now = 
       stopAtSeedTimeHours: instance.stopAtSeedTimeHours,
       idleWhenNoLeechers: instance.idleWhenNoLeechers,
       idleWhenNoSeeders: instance.idleWhenNoSeeders,
+      minLeechers: instance.minLeechers ?? 0,
+      maxSeederLeecherRatio: instance.maxSeederLeecherRatio ?? null,
       postStopAction: instance.postStopAction,
     },
   };

@@ -89,6 +89,8 @@
   let stopAtSeedTimeHours = $state(24);
   let idleWhenNoLeechers = $state(false);
   let idleWhenNoSeeders = $state(false);
+  let minLeechers = $state(0);
+  let maxSeederLeecherRatio = $state(null);
   let advancedOpen = $state(false);
 
   // Import state
@@ -126,6 +128,8 @@
       stopAtSeedTimeEnabled,
       idleWhenNoLeechers,
       idleWhenNoSeeders,
+      minLeechers,
+      maxSeederLeecherRatio,
     ].filter(Boolean).length
   );
 
@@ -187,6 +191,8 @@
     if (s.stopAtSeedTimeHours != null) stopAtSeedTimeHours = s.stopAtSeedTimeHours;
     if (s.idleWhenNoLeechers != null) idleWhenNoLeechers = s.idleWhenNoLeechers;
     if (s.idleWhenNoSeeders != null) idleWhenNoSeeders = s.idleWhenNoSeeders;
+    if (s.minLeechers != null) minLeechers = s.minLeechers;
+    if (s.maxSeederLeecherRatio != null) maxSeederLeecherRatio = s.maxSeederLeecherRatio;
     if (s.updateIntervalSeconds != null) updateIntervalSeconds = s.updateIntervalSeconds;
     if (s.scrapeInterval != null) scrapeInterval = s.scrapeInterval;
   }
@@ -364,6 +370,8 @@
       stopAtSeedTimeHours: stopAtSeedTimeEnabled ? parseFloat(stopAtSeedTimeHours) : undefined,
       idleWhenNoLeechers,
       idleWhenNoSeeders,
+      minLeechers,
+      maxSeederLeecherRatio,
       progressiveRatesEnabled,
       targetUploadRate: progressiveRatesEnabled ? parseFloat(targetUploadRate) : undefined,
       targetDownloadRate: progressiveRatesEnabled ? parseFloat(targetDownloadRate) : undefined,
@@ -455,6 +463,8 @@
     stopAtSeedTimeHours = 24;
     idleWhenNoLeechers = false;
     idleWhenNoSeeders = false;
+    minLeechers = 0;
+    maxSeederLeecherRatio = null;
     updateIntervalSeconds = 5;
     scrapeInterval = 60;
     advancedOpen = false;
@@ -958,6 +968,8 @@
                 bind:stopAtSeedTimeHours
                 bind:idleWhenNoLeechers
                 bind:idleWhenNoSeeders
+                bind:minLeechers
+                bind:maxSeederLeecherRatio
                 {completionPercent}
               />
             </div>
