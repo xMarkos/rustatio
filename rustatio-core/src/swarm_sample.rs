@@ -368,10 +368,18 @@ pub fn pace_decision(
     let age = now.saturating_sub(at) as f64;
     let projected = consensus + speed * age;
     let one_piece = if total_pieces > 0 { 100.0 / total_pieces as f64 } else { 0.0 };
-    let delta = config
-        .epsilon_min_percent
-        .max(one_piece)
-        .max(config.velocity_k * speed * config.resample_interval.as_secs_f64());
+    // Band (delta): when at or behind projected, cover k resample intervals
+    // of swarm motion to avoid sawtooth. When AHEAD of projected, use tight
+    // band (epsilon/one_piece) so we don't project the swarm's forward motion
+    // into our allowed lead. This prevents finishing minutes early on steady swarms.
+    let delta = if our_completion <= projected {
+        config
+            .epsilon_min_percent
+            .max(one_piece)
+            .max(config.velocity_k * speed * config.resample_interval.as_secs_f64())
+    } else {
+        config.epsilon_min_percent.max(one_piece)
+    };
     // Completion-phase escape hatch: far along ourselves in a mostly-seed
     // swarm, finish at full speed like everyone else did. One-way per
     // torrent, so no oscillation risk. Liar-safe: fake seeds inflate the
