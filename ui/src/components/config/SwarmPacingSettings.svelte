@@ -6,11 +6,11 @@
 
   let {
     enabled = $bindable(false),
-    maxPeers = $bindable(),
-    resampleIntervalSecs = $bindable(),
-    epsilonMinPercent = $bindable(),
-    phaseMinOursPercent = $bindable(),
-    phaseMinSeedFraction = $bindable(),
+    maxPeers = $bindable(8),
+    resampleIntervalSecs = $bindable(120),
+    epsilonMinPercent = $bindable(1.0),
+    phaseMinOursPercent = $bindable(90.0),
+    phaseMinSeedFraction = $bindable(0.7),
     disabled = false,
     onchange,
     onfocus,
