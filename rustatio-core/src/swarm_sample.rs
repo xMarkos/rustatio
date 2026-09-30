@@ -123,6 +123,7 @@ pub fn rotate_take(peers: &[SocketAddr], offset: usize, n: usize) -> Vec<SocketA
 /// Human-readable gate state for the API: the first unsatisfied gate
 /// condition wins, so `paced=false` is never ambiguous about *why* the
 /// mechanism is off. Pure for unit tests.
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 pub fn describe_gate(
     completion: f64,
     download_intent: f64,
@@ -150,13 +151,14 @@ pub fn describe_gate(
 }
 
 pub fn now_unix() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 fn to_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
-        s.push_str(&format!("{b:02x}"));
+        let _ = write!(s, "{b:02x}");
     }
     s
 }
@@ -213,17 +215,15 @@ async fn sample_one_peer(
         return None;
     }
     log_debug!("Swarm dial {addr}: connecting");
-    let mut stream =
-        match tokio::time::timeout(config.connect_timeout, TcpStream::connect(addr)).await {
-            Ok(Ok(s)) => {
-                log_debug!("Swarm peer {addr}: connected, sending handshake");
-                s
-            }
-            _ => {
-                log_debug!("Swarm dial {addr}: connect failed or timed out");
-                return None;
-            }
-        };
+    let mut stream = if let Ok(Ok(s)) =
+        tokio::time::timeout(config.connect_timeout, TcpStream::connect(addr)).await
+    {
+        log_debug!("Swarm peer {addr}: connected, sending handshake");
+        s
+    } else {
+        log_debug!("Swarm dial {addr}: connect failed or timed out");
+        return None;
+    };
 
     // 68-byte handshake: len + protocol + reserved + info_hash + peer_id.
     let mut hs = [0u8; HANDSHAKE_LEN];
@@ -271,7 +271,7 @@ async fn sample_one_peer(
                 return None;
             }
             let have: u32 = bitfield.iter().map(|b| b.count_ones()).sum();
-            let percent = (have as f64 / total_pieces as f64 * 100.0).clamp(0.0, 100.0);
+            let percent = (f64::from(have) / total_pieces as f64 * 100.0).clamp(0.0, 100.0);
             log_debug!("Swarm peer {addr}: bitfield {percent:.1}%");
             return Some(PeerSample {
                 addr: addr.to_string(),
@@ -307,9 +307,13 @@ pub struct PaceDecision {
     pub delta: f64,
 }
 
-/// Median peer completion after exclusions: drop seeds/liars at or above
-/// the seed threshold, take the median, then trim suspicious highs above
-/// median + band and re-take the median. None when nothing usable remains.
+/// Median peer completion after exclusions:
+/// - Drop seeds/liars at or above the seed threshold
+/// - Take the median
+/// - Trim suspicious highs above median + band
+/// - Re-take the median
+///
+/// Returns None when nothing usable remains.
 pub fn trimmed_median(samples: &[PeerSample], config: &SwarmSampleConfig) -> Option<f64> {
     let mut vals: Vec<f64> =
         samples.iter().map(|s| s.percent).filter(|p| *p < config.seed_exclude_percent).collect();
@@ -335,15 +339,19 @@ fn percentile(sorted: &[f64], percent: f64) -> f64 {
     let rank = percent / 100.0 * (sorted.len() - 1) as f64;
     let lo = rank.floor() as usize;
     let hi = rank.ceil() as usize;
-    sorted[lo] + (sorted[hi] - sorted[lo]) * (rank - lo as f64)
+    (sorted[hi] - sorted[lo]).mul_add(rank - lo as f64, sorted[lo])
 }
 
-/// Pace law with three zones: full configured speed while at or behind the
-/// projected swarm P, swarm-speed matching inside the band (P, P+delta],
-/// full hold beyond it. The cap is never a boost: the caller clamps it to
-/// its configured rate. None with no consensus history (fail open). The
-/// band covers a full cycle of estimated swarm motion so the decision line
-/// moves with the swarm instead of sawtoothing 0/max around a static one.
+/// Pace law with three zones:
+/// - Full configured speed while at or behind projected swarm P
+/// - Swarm-speed matching inside the band (P, P+delta]
+/// - Full hold beyond it
+///
+/// The cap is never a boost: the caller clamps it to its configured rate.
+/// None with no consensus history (fail open). The band covers a full cycle
+/// of estimated swarm motion so the decision line moves with the swarm
+/// instead of sawtoothing 0/max around a static one.
+#[allow(clippy::too_many_arguments)]
 pub fn pace_decision(
     our_completion: f64,
     history: &[(u64, f64)],
@@ -368,11 +376,9 @@ pub fn pace_decision(
     // torrent, so no oscillation risk. Liar-safe: fake seeds inflate the
     // fraction, but young swarms have large leecher denominators and mid-O
     // torrents never reach the ours threshold.
-    let phase_finish = seed_fraction
-        .map(|s| {
-            our_completion >= config.phase_min_ours_percent && s >= config.phase_min_seed_fraction
-        })
-        .unwrap_or(false);
+    let phase_finish = seed_fraction.is_some_and(|s| {
+        our_completion >= config.phase_min_ours_percent && s >= config.phase_min_seed_fraction
+    });
     if phase_finish {
         return Some(PaceDecision {
             consensus,

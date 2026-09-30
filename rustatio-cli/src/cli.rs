@@ -84,6 +84,14 @@ pub enum Commands {
         #[arg(long)]
         idle_when_no_seeders: bool,
 
+        /// Idle (0 KB/s up/down) when fewer than this many leechers are present
+        #[arg(long, default_value = "0", value_name = "COUNT")]
+        min_leechers: u64,
+
+        /// Idle upload when seeders/leechers ratio exceeds this value
+        #[arg(long, value_name = "RATIO")]
+        max_seeder_leecher_ratio: Option<f64>,
+
         /// Disable rate randomization
         #[arg(long)]
         no_randomize: bool,
@@ -119,6 +127,30 @@ pub enum Commands {
         /// Duration to reach target rates (hours)
         #[arg(long, default_value = "1.0", value_name = "HOURS")]
         progressive_duration: f64,
+
+        /// Enable swarm-paced download (experimental)
+        #[arg(long, default_value = "true")]
+        swarm_pacing_enabled: bool,
+
+        /// Max peers dialed per swarm sample cycle
+        #[arg(long, default_value = "8", value_name = "PEERS")]
+        swarm_max_peers: u32,
+
+        /// Minimum gap between swarm sample cycles (seconds)
+        #[arg(long, default_value = "120", value_name = "SECONDS")]
+        swarm_resample_interval_secs: u64,
+
+        /// Hysteresis floor for pacing, percentage points
+        #[arg(long, default_value = "1.0", value_name = "PERCENT")]
+        swarm_epsilon_min_percent: f64,
+
+        /// Completion-phase hatch arm level (percent)
+        #[arg(long, default_value = "90.0", value_name = "PERCENT")]
+        swarm_phase_min_ours_percent: f64,
+
+        /// Completion-phase hatch swarm-completeness fraction
+        #[arg(long, default_value = "0.7", value_name = "FRACTION")]
+        swarm_phase_min_seed_fraction: f64,
 
         /// Path to config file
         #[arg(long, value_name = "FILE")]
