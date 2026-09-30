@@ -13,22 +13,7 @@
     phaseMinSeedFraction = $bindable(0.7),
     disabled = false,
     onchange,
-    onfocus,
-    onblur,
   } = $props();
-
-  // Read values from the event, never from possibly-stale prop reads:
-  // Svelte compiles bare $bindable reads in handlers unreliably here.
-  function numberChanged(key, e) {
-    const v = e.currentTarget.value;
-    const num = v === '' ? undefined : Number(v);
-    if (key === 'swarmMaxPeers') maxPeers = num;
-    else if (key === 'swarmResampleIntervalSecs') resampleIntervalSecs = num;
-    else if (key === 'swarmEpsilonMinPercent') epsilonMinPercent = num;
-    else if (key === 'swarmPhaseMinOursPercent') phaseMinOursPercent = num;
-    else if (key === 'swarmPhaseMinSeedFraction') phaseMinSeedFraction = num;
-    onchange?.({ [key]: num });
-  }
 </script>
 
 <div>
@@ -68,9 +53,7 @@
             step="1"
             class="w-20 h-8 text-center font-medium"
             placeholder="8"
-            onfocus={onfocus}
-            onblur={onblur}
-            oninput={e => numberChanged('swarmMaxPeers', e)}
+            oninput={() => onchange?.({ swarmMaxPeers: maxPeers })}
           />
         </div>
         <div class="p-3">
@@ -91,9 +74,7 @@
               step="1"
               class="w-20 h-8 text-center font-medium"
               placeholder="120"
-              onfocus={onfocus}
-              onblur={onblur}
-              oninput={e => numberChanged('swarmResampleIntervalSecs', e)}
+              oninput={() => onchange?.({ swarmResampleIntervalSecs: resampleIntervalSecs })}
             />
             <span class="text-xs text-muted-foreground">secs</span>
           </div>
@@ -118,9 +99,7 @@
             step="0.1"
             class="w-20 h-8 text-center font-medium"
             placeholder="1.0"
-            onfocus={onfocus}
-            onblur={onblur}
-            oninput={e => numberChanged('swarmEpsilonMinPercent', e)}
+            oninput={() => onchange?.({ swarmEpsilonMinPercent: epsilonMinPercent })}
           />
         </div>
         <div class="p-3 border-r border-border">
@@ -140,9 +119,7 @@
             step="1"
             class="w-20 h-8 text-center font-medium"
             placeholder="90"
-            onfocus={onfocus}
-            onblur={onblur}
-            oninput={e => numberChanged('swarmPhaseMinOursPercent', e)}
+            oninput={() => onchange?.({ swarmPhaseMinOursPercent: phaseMinOursPercent })}
           />
         </div>
         <div class="p-3">
@@ -162,9 +139,7 @@
             step="0.05"
             class="w-20 h-8 text-center font-medium"
             placeholder="0.7"
-            onfocus={onfocus}
-            onblur={onblur}
-            oninput={e => numberChanged('swarmPhaseMinSeedFraction', e)}
+            oninput={() => onchange?.({ swarmPhaseMinSeedFraction: phaseMinSeedFraction })}
           />
         </div>
       </div>
