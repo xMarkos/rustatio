@@ -970,9 +970,11 @@ impl RatioFaker {
         // Reads download_intent, NOT current_download_rate: the latter is the
         // post-pace actuated value, and gating on it releases the throttle on
         // the very next tick (engage/release limit cycle).
+        let total = self.stats.seeders + self.stats.leechers;
+        let seed_fraction = if total > 0 { self.stats.seeders as f64 / total as f64 } else { 0.0 };
         if !(self.stats.torrent_completion < 100.0
             && self.stats.download_intent > 0.0
-            && self.stats.seeders == 1)
+            && seed_fraction >= self.swarm_config.phase_min_seed_fraction)
         {
             return (download_rate, None);
         }
@@ -2091,10 +2093,12 @@ impl RatioFakerHandle {
             guard.stats.torrent_completion,
             guard.stats.download_intent,
             guard.stats.seeders,
+            guard.stats.leechers,
             !guard.last_peers.is_empty(),
             stale,
             guard.stats.is_paced,
             guard.stats.pacing_reason.as_deref(),
+            guard.swarm_config.phase_min_seed_fraction,
         );
         let mut snap = guard.swarm_snapshot.clone();
         // Peer details older than an hour never come back to life: clear them
@@ -2301,7 +2305,7 @@ impl RatioFakerHandle {
         }
 
         // Swarm observer v1: sample peer completion when downloading
-        // (completion < 100% with download running) in a lone-seeder
+        // (completion < 100% with download running) in a seed-heavy
         // swarm. Evaluated every update, never latched.
         let sample_params = {
             let mut guard = self.inner.lock().await;
@@ -2311,9 +2315,12 @@ impl RatioFakerHandle {
                 .unwrap_or(true);
             let below_100 = guard.stats.torrent_completion < 100.0;
             let downloading = guard.stats.download_intent > 0.0;
-            let lone_seeder = guard.stats.seeders == 1;
+            let total = guard.stats.seeders + guard.stats.leechers;
+            let seed_fraction =
+                if total > 0 { guard.stats.seeders as f64 / total as f64 } else { 0.0 };
+            let seed_heavy = seed_fraction >= guard.swarm_config.phase_min_seed_fraction;
             let have_peers = !guard.last_peers.is_empty();
-            let active = due && below_100 && downloading && lone_seeder && have_peers;
+            let active = due && below_100 && downloading && seed_heavy && have_peers;
             // Gate evaluation log, rate-limited to 1/min to avoid spam.
             let gate_log_due =
                 guard.last_gate_log.map(|t| t.elapsed() >= Duration::from_secs(60)).unwrap_or(true);
@@ -2323,15 +2330,15 @@ impl RatioFakerHandle {
             if gate_log_due || flipped {
                 guard.last_gate_log = Some(Instant::now());
                 log_debug!(
-                    "Swarm gate: active={} due={} completion={:.1}<100={} dl_rate={:.0}>0={} seeders={}==1={} peers={} have={}",
+                    "Swarm gate: active={} due={} completion={:.1}<100={} dl_rate={:.0}>0={} seed_frac={:.2}>=threshold={:.2} peers={} have={}",
                     active,
                     due,
                     guard.stats.torrent_completion,
                     below_100,
                     guard.stats.download_intent,
                     downloading,
-                    guard.stats.seeders,
-                    lone_seeder,
+                    seed_fraction,
+                    guard.swarm_config.phase_min_seed_fraction,
                     guard.last_peers.len(),
                     have_peers
                 );
@@ -2780,8 +2787,8 @@ mod tests {
         faker.stats.torrent_completion = 22.0;
         faker.stats.left = 700_000;
         faker.stats.current_download_rate = 100.0;
-        faker.stats.seeders = 1;
-        faker.stats.leechers = 10;
+        faker.stats.seeders = 8;
+        faker.stats.leechers = 2;
         let now = crate::swarm_sample::now_unix();
         let peer = |percent: f64| crate::swarm_sample::PeerSample {
             addr: "1.1.1.1:6881".to_string(),
@@ -2838,8 +2845,8 @@ mod tests {
         faker.stats.torrent_completion = 40.0;
         faker.stats.left = 600_000;
         faker.stats.current_download_rate = 100.0;
-        faker.stats.seeders = 1;
-        faker.stats.leechers = 10;
+        faker.stats.seeders = 8;
+        faker.stats.leechers = 2;
         let now = crate::swarm_sample::now_unix();
         let peer = |percent: f64| crate::swarm_sample::PeerSample {
             addr: "1.1.1.1:6881".to_string(),

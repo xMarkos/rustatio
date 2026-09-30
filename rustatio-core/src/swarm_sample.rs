@@ -128,17 +128,28 @@ pub fn describe_gate(
     completion: f64,
     download_intent: f64,
     seeders: i64,
+    leechers: i64,
     has_peers: bool,
     snapshot_stale: bool,
     paced: bool,
     pacing_reason: Option<&str>,
+    min_seed_fraction: f64,
 ) -> (bool, String) {
+    let total = seeders + leechers;
+    let seed_fraction = if total > 0 { seeders as f64 / total as f64 } else { 0.0 };
     if completion >= 100.0 {
         (false, "complete".to_string())
     } else if download_intent <= 0.0 {
         (false, "not downloading".to_string())
-    } else if seeders != 1 {
-        (false, format!("{seeders} seeders (need exactly 1)"))
+    } else if seed_fraction < min_seed_fraction {
+        (
+            false,
+            format!(
+                "seed fraction {:.0}% (need ≥{:.0}%)",
+                seed_fraction * 100.0,
+                min_seed_fraction * 100.0
+            ),
+        )
     } else if !has_peers {
         (false, "no peers from tracker yet".to_string())
     } else if snapshot_stale {
@@ -146,7 +157,7 @@ pub fn describe_gate(
     } else if paced {
         (true, pacing_reason.unwrap_or("pacing").to_string())
     } else {
-        (true, "tracking lone-seeder swarm".to_string())
+        (true, "tracking swarm".to_string())
     }
 }
 
@@ -424,34 +435,45 @@ mod tests {
     #[test]
     fn gate_reason_names_first_failure() {
         // Complete beats everything else.
-        assert_eq!(describe_gate(100.0, 0.0, 5, false, true, false, None).0, false);
-        assert_eq!(describe_gate(100.0, 0.0, 5, false, true, false, None).1, "complete");
-        // Order: downloading -> lone seeder -> peers -> freshness.
-        assert_eq!(describe_gate(20.0, 0.0, 1, true, false, false, None).1, "not downloading");
+        assert_eq!(describe_gate(100.0, 0.0, 5, 5, false, true, false, None, 0.7).0, false);
+        assert_eq!(describe_gate(100.0, 0.0, 5, 5, false, true, false, None, 0.7).1, "complete");
+        // Order: downloading -> seed fraction -> peers -> freshness.
         assert_eq!(
-            describe_gate(20.0, 5.0, 3, true, false, false, None).1,
-            "3 seeders (need exactly 1)"
+            describe_gate(20.0, 0.0, 1, 1, true, false, false, None, 0.7).1,
+            "not downloading"
         );
+        // 3 seeders, 7 leechers = 30% seed fraction < 70% threshold
         assert_eq!(
-            describe_gate(20.0, 5.0, 1, false, false, false, None).1,
+            describe_gate(20.0, 5.0, 3, 7, true, false, false, None, 0.7).1,
+            "seed fraction 30% (need ≥70%)"
+        );
+        // 7 seeders, 3 leechers = 70% seed fraction >= 70% threshold -> passes seed fraction check
+        assert_eq!(
+            describe_gate(20.0, 5.0, 7, 3, false, false, false, None, 0.7).1,
             "no peers from tracker yet"
         );
-        assert_eq!(describe_gate(20.0, 5.0, 1, true, true, false, None).1, "no fresh swarm sample");
+        // 10 seeders, 0 leechers = 100% seed fraction >= 70% threshold
+        assert_eq!(
+            describe_gate(20.0, 5.0, 10, 0, true, true, false, None, 0.7).1,
+            "no fresh swarm sample"
+        );
         // Active reveals pacing mode, not just a boolean.
         let (on, why) = describe_gate(
             20.0,
             5.0,
-            1,
+            10,
+            0,
             true,
             false,
             true,
             Some("matching swarm speed (20.0% vs 4.4%)"),
+            0.7,
         );
         assert!(on);
         assert!(why.contains("matching"));
-        let (on, why) = describe_gate(20.0, 5.0, 1, true, false, false, None);
+        let (on, why) = describe_gate(20.0, 5.0, 10, 0, true, false, false, None, 0.7);
         assert!(on);
-        assert_eq!(why, "tracking lone-seeder swarm");
+        assert_eq!(why, "tracking swarm");
     }
 
     #[test]
