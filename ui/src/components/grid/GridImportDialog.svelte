@@ -18,6 +18,7 @@
   import ClientIcon from '../config/ClientIcon.svelte';
   import RandomizationSettings from '../config/RandomizationSettings.svelte';
   import ProgressiveRateSettings from '../config/ProgressiveRateSettings.svelte';
+  import SwarmPacingSettings from '../config/SwarmPacingSettings.svelte';
   import StopConditionSettings from '../config/StopConditionSettings.svelte';
   import GridClientConfigFields from './GridClientConfigFields.svelte';
 
@@ -91,6 +92,12 @@
   let idleWhenNoSeeders = $state(false);
   let minLeechers = $state(0);
   let maxSeederLeecherRatio = $state(null);
+  let swarmPacingEnabled = $state(true);
+  let swarmMaxPeers = $state();
+  let swarmResampleIntervalSecs = $state();
+  let swarmEpsilonMinPercent = $state();
+  let swarmPhaseMinOursPercent = $state();
+  let swarmPhaseMinSeedFraction = $state();
   let advancedOpen = $state(false);
 
   // Import state
@@ -130,6 +137,12 @@
       idleWhenNoSeeders,
       minLeechers,
       maxSeederLeecherRatio,
+      swarmPacingEnabled,
+      swarmMaxPeers,
+      swarmResampleIntervalSecs,
+      swarmEpsilonMinPercent,
+      swarmPhaseMinOursPercent,
+      swarmPhaseMinSeedFraction,
     ].filter(Boolean).length
   );
 
@@ -193,6 +206,14 @@
     if (s.idleWhenNoSeeders != null) idleWhenNoSeeders = s.idleWhenNoSeeders;
     if (s.minLeechers != null) minLeechers = s.minLeechers;
     if (s.maxSeederLeecherRatio != null) maxSeederLeecherRatio = s.maxSeederLeecherRatio;
+    if (s.swarmPacingEnabled != null) swarmPacingEnabled = s.swarmPacingEnabled;
+    if (s.swarmMaxPeers != null) swarmMaxPeers = s.swarmMaxPeers;
+    if (s.swarmResampleIntervalSecs != null)
+      swarmResampleIntervalSecs = s.swarmResampleIntervalSecs;
+    if (s.swarmEpsilonMinPercent != null) swarmEpsilonMinPercent = s.swarmEpsilonMinPercent;
+    if (s.swarmPhaseMinOursPercent != null) swarmPhaseMinOursPercent = s.swarmPhaseMinOursPercent;
+    if (s.swarmPhaseMinSeedFraction != null)
+      swarmPhaseMinSeedFraction = s.swarmPhaseMinSeedFraction;
     if (s.updateIntervalSeconds != null) updateIntervalSeconds = s.updateIntervalSeconds;
     if (s.scrapeInterval != null) scrapeInterval = s.scrapeInterval;
   }
@@ -372,6 +393,22 @@
       idleWhenNoSeeders,
       minLeechers,
       maxSeederLeecherRatio,
+      swarmPacingEnabled,
+      ...(swarmMaxPeers != null && swarmMaxPeers !== ''
+        ? { swarmMaxPeers: parseInt(swarmMaxPeers) }
+        : {}),
+      ...(swarmResampleIntervalSecs != null && swarmResampleIntervalSecs !== ''
+        ? { swarmResampleIntervalSecs: parseInt(swarmResampleIntervalSecs) }
+        : {}),
+      ...(swarmEpsilonMinPercent != null && swarmEpsilonMinPercent !== ''
+        ? { swarmEpsilonMinPercent: parseFloat(swarmEpsilonMinPercent) }
+        : {}),
+      ...(swarmPhaseMinOursPercent != null && swarmPhaseMinOursPercent !== ''
+        ? { swarmPhaseMinOursPercent: parseFloat(swarmPhaseMinOursPercent) }
+        : {}),
+      ...(swarmPhaseMinSeedFraction != null && swarmPhaseMinSeedFraction !== ''
+        ? { swarmPhaseMinSeedFraction: parseFloat(swarmPhaseMinSeedFraction) }
+        : {}),
       progressiveRatesEnabled,
       targetUploadRate: progressiveRatesEnabled ? parseFloat(targetUploadRate) : undefined,
       targetDownloadRate: progressiveRatesEnabled ? parseFloat(targetDownloadRate) : undefined,
@@ -465,6 +502,12 @@
     idleWhenNoSeeders = false;
     minLeechers = 0;
     maxSeederLeecherRatio = null;
+    swarmPacingEnabled = true;
+    swarmMaxPeers = undefined;
+    swarmResampleIntervalSecs = undefined;
+    swarmEpsilonMinPercent = undefined;
+    swarmPhaseMinOursPercent = undefined;
+    swarmPhaseMinSeedFraction = undefined;
     updateIntervalSeconds = 5;
     scrapeInterval = 60;
     advancedOpen = false;
@@ -949,6 +992,17 @@
               bind:durationHours={progressiveDurationHours}
               bind:targetUploadRate
               bind:targetDownloadRate
+              uploadRate={parseNumber(uploadRate, 50)}
+              downloadRate={parseNumber(downloadRate, 0)}
+            />
+
+            <SwarmPacingSettings
+              bind:enabled={swarmPacingEnabled}
+              bind:maxPeers={swarmMaxPeers}
+              bind:resampleIntervalSecs={swarmResampleIntervalSecs}
+              bind:epsilonMinPercent={swarmEpsilonMinPercent}
+              bind:phaseMinOursPercent={swarmPhaseMinOursPercent}
+              bind:phaseMinSeedFraction={swarmPhaseMinSeedFraction}
               uploadRate={parseNumber(uploadRate, 50)}
               downloadRate={parseNumber(downloadRate, 0)}
             />

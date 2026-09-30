@@ -35,6 +35,30 @@ pub struct AppConfig {
     pub active_instance_id: Option<usize>,
 }
 
+const fn default_swarm_pacing_enabled() -> bool {
+    true
+}
+
+const fn default_swarm_max_peers() -> u32 {
+    8
+}
+
+const fn default_swarm_resample_interval_secs() -> u64 {
+    120
+}
+
+const fn default_swarm_epsilon_min_percent() -> f64 {
+    1.0
+}
+
+const fn default_swarm_phase_min_ours_percent() -> f64 {
+    90.0
+}
+
+const fn default_swarm_phase_min_seed_fraction() -> f64 {
+    0.7
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstanceConfig {
     pub torrent_path: Option<String>,
@@ -77,6 +101,18 @@ pub struct InstanceConfig {
     pub min_leechers: u64,
     #[serde(default)]
     pub max_seeder_leecher_ratio: Option<f64>,
+    #[serde(default = "default_swarm_pacing_enabled")]
+    pub swarm_pacing_enabled: bool,
+    #[serde(default = "default_swarm_max_peers")]
+    pub swarm_max_peers: u32,
+    #[serde(default = "default_swarm_resample_interval_secs")]
+    pub swarm_resample_interval_secs: u64,
+    #[serde(default = "default_swarm_epsilon_min_percent")]
+    pub swarm_epsilon_min_percent: f64,
+    #[serde(default = "default_swarm_phase_min_ours_percent")]
+    pub swarm_phase_min_ours_percent: f64,
+    #[serde(default = "default_swarm_phase_min_seed_fraction")]
+    pub swarm_phase_min_seed_fraction: f64,
     #[serde(default)]
     pub post_stop_action: PostStopAction,
     pub progressive_rates_enabled: bool,

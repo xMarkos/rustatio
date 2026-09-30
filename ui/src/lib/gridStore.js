@@ -259,7 +259,7 @@ export const gridActions = {
     const stoppable = ids.filter(id => {
       const inst = instances.find(i => i.id === id);
       const s = inst?.state?.toLowerCase();
-      return s === 'running' || s === 'idle' || s === 'paused' || s === 'starting';
+      return s === 'running' || s === 'paced' || s === 'idle' || s === 'paused' || s === 'starting';
     });
     if (stoppable.length === 0) return;
     const idSet = new Set(stoppable);
@@ -285,7 +285,7 @@ export const gridActions = {
     const pauseable = ids.filter(id => {
       const inst = instances.find(i => i.id === id);
       const s = inst?.state?.toLowerCase();
-      return s === 'running' || s === 'idle';
+      return s === 'running' || s === 'paced' || s === 'idle';
     });
     if (pauseable.length === 0) return;
     const result = await api.gridPause(pauseable);

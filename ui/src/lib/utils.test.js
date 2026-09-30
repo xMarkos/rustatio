@@ -201,6 +201,12 @@ test('serializeSessionInstances preserves backup snapshot shape for desktop/web 
       idleWhenNoSeeders: false,
       minLeechers: '3',
       maxSeederLeecherRatio: '25',
+      swarmPacingEnabled: true,
+      swarmMaxPeers: '12',
+      swarmResampleIntervalSecs: '90',
+      swarmEpsilonMinPercent: '1.5',
+      swarmPhaseMinOursPercent: '85',
+      swarmPhaseMinSeedFraction: '0.6',
       postStopAction: 'pause',
       progressiveRatesEnabled: true,
       targetUploadRate: '500',
@@ -244,6 +250,12 @@ test('serializeSessionInstances preserves backup snapshot shape for desktop/web 
       idle_when_no_seeders: false,
       min_leechers: 3,
       max_seeder_leecher_ratio: 25,
+      swarm_pacing_enabled: true,
+      swarm_max_peers: 12,
+      swarm_resample_interval_secs: 90,
+      swarm_epsilon_min_percent: 1.5,
+      swarm_phase_min_ours_percent: 85,
+      swarm_phase_min_seed_fraction: 0.6,
       post_stop_action: 'pause',
       progressive_rates_enabled: true,
       target_upload_rate: 500,
@@ -251,6 +263,23 @@ test('serializeSessionInstances preserves backup snapshot shape for desktop/web 
       progressive_duration_hours: 6,
     },
   ]);
+});
+
+test('serializeSessionInstances omits unset swarm knobs so backend defaults apply', () => {
+  const [out] = serializeSessionInstances([
+    {
+      id: '9',
+      minLeechers: '0',
+      swarmPacingEnabled: true,
+    },
+  ]);
+
+  assert.equal(out.swarm_pacing_enabled, true);
+  assert.ok(!('swarm_max_peers' in out));
+  assert.ok(!('swarm_resample_interval_secs' in out));
+  assert.ok(!('swarm_epsilon_min_percent' in out));
+  assert.ok(!('swarm_phase_min_ours_percent' in out));
+  assert.ok(!('swarm_phase_min_seed_fraction' in out));
 });
 
 test('getActiveInstanceIndex returns null when the active id is missing', () => {

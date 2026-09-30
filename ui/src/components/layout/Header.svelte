@@ -23,6 +23,7 @@
     running: 'border-primary/20',
     paused: 'border-stat-ratio/20',
     idling: 'border-stat-ratio/20',
+    paced: 'border-stat-download/20',
     success: 'border-stat-upload/20',
     warning: 'border-stat-ratio/20',
     error: 'border-destructive/20',

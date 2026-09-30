@@ -150,6 +150,23 @@ test('mergeBulkSectionsIntoInstance only applies enabled sections', () => {
   assert.equal(merged.downloadRate, 120);
 });
 
+test('mergeBulkSectionsIntoInstance applies the swarm section', () => {
+  const instance = makeInstance({ swarmMaxPeers: 8 });
+  const merged = mergeBulkSectionsIntoInstance(instance, {
+    client: { apply: false, value: {} },
+    rates: { apply: false, value: {} },
+    initial: { apply: false, value: {} },
+    timing: { apply: false, value: {} },
+    randomization: { apply: false, value: {} },
+    progressive: { apply: false, value: {} },
+    stopConditions: { apply: false, value: {} },
+    swarm: { apply: true, value: { swarmMaxPeers: 12, swarmPacingEnabled: false } },
+  });
+
+  assert.equal(merged.swarmMaxPeers, 12);
+  assert.equal(merged.swarmPacingEnabled, false);
+});
+
 test('buildBulkUpdateEntries builds one payload per instance', () => {
   const entries = buildBulkUpdateEntries(
     [makeInstance({ id: 'a' }), makeInstance({ id: 'b' })],

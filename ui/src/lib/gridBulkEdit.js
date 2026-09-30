@@ -72,6 +72,14 @@ export function createBulkEditState(instances = []) {
     targetDownloadRate: inst.targetDownloadRate,
     progressiveDurationHours: inst.progressiveDurationHours,
   }));
+  const swarm = getCommonSection(instances, inst => ({
+    swarmPacingEnabled: inst.swarmPacingEnabled,
+    swarmMaxPeers: inst.swarmMaxPeers,
+    swarmResampleIntervalSecs: inst.swarmResampleIntervalSecs,
+    swarmEpsilonMinPercent: inst.swarmEpsilonMinPercent,
+    swarmPhaseMinOursPercent: inst.swarmPhaseMinOursPercent,
+    swarmPhaseMinSeedFraction: inst.swarmPhaseMinSeedFraction,
+  }));
   const stopConditions = getCommonSection(instances, inst => ({
     stopAtRatioEnabled: inst.stopAtRatioEnabled,
     stopAtRatio: inst.stopAtRatio,
@@ -98,6 +106,7 @@ export function createBulkEditState(instances = []) {
     timing: { apply: false, ...timing },
     randomization: { apply: false, ...randomization },
     progressive: { apply: false, ...progressive },
+    swarm: { apply: false, ...swarm },
     stopConditions: { apply: false, ...stopConditions },
   };
 
@@ -193,6 +202,22 @@ export function applyPresetToBulkState(state, preset) {
       ...(settings.progressiveDurationHours != null
         ? { progressiveDurationHours: settings.progressiveDurationHours }
         : {}),
+      ...(settings.swarmPacingEnabled != null
+        ? { swarmPacingEnabled: settings.swarmPacingEnabled }
+        : {}),
+      ...(settings.swarmMaxPeers != null ? { swarmMaxPeers: settings.swarmMaxPeers } : {}),
+      ...(settings.swarmResampleIntervalSecs != null
+        ? { swarmResampleIntervalSecs: settings.swarmResampleIntervalSecs }
+        : {}),
+      ...(settings.swarmEpsilonMinPercent != null
+        ? { swarmEpsilonMinPercent: settings.swarmEpsilonMinPercent }
+        : {}),
+      ...(settings.swarmPhaseMinOursPercent != null
+        ? { swarmPhaseMinOursPercent: settings.swarmPhaseMinOursPercent }
+        : {}),
+      ...(settings.swarmPhaseMinSeedFraction != null
+        ? { swarmPhaseMinSeedFraction: settings.swarmPhaseMinSeedFraction }
+        : {}),
     };
   }
 
@@ -285,6 +310,9 @@ export function mergeBulkSectionsIntoInstance(instance, sections) {
   }
   if (sections.progressive.apply) {
     Object.assign(merged, sections.progressive.value);
+  }
+  if (sections.swarm?.apply) {
+    Object.assign(merged, sections.swarm.value);
   }
   if (sections.stopConditions.apply) {
     const { effectiveStopAtRatio, ...stopConditionValues } = sections.stopConditions.value;

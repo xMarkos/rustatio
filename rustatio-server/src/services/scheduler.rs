@@ -141,6 +141,7 @@ async fn update_instances(
         if std::mem::discriminant(&after.state) != std::mem::discriminant(&before.state)
             || after.stop_condition_met != before.stop_condition_met
             || after.is_idling != before.is_idling
+            || after.is_paced != before.is_paced
             || after.tracker_error != before.tracker_error
             || after.tracker_retry_attempt != before.tracker_retry_attempt
             || after.tracker_retry_at_ms != before.tracker_retry_at_ms
