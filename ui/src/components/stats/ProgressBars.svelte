@@ -16,11 +16,18 @@
     stopAtSeedTimeHours,
     formatBytes,
     formatDuration,
+    swarmConsensus = null,
   } = $props();
 
   const isLeeching = $derived(completionPercent < 100);
   const torrentCompletion = $derived(stats?.torrent_completion ?? completionPercent);
   const torrentDownloaded = $derived(torrentSize > 0 ? torrentSize - (stats?.left ?? 0) : 0);
+  const showSwarmBand = $derived(
+    isLeeching && typeof swarmConsensus === 'number' && Number.isFinite(swarmConsensus)
+  );
+  const swarmPct = $derived(
+    showSwarmBand ? Math.min(100, Math.max(0, swarmConsensus)) : 0
+  );
 </script>
 
 <Card class="p-3">
@@ -41,9 +48,18 @@
             >
           {/if}
         </div>
-        <div class="w-full h-5 bg-muted rounded-full overflow-hidden border border-border">
+        <div
+          class="relative w-full h-5 bg-muted rounded-full overflow-hidden border border-border"
+        >
+          {#if showSwarmBand}
+            <div
+              class="absolute inset-y-0 left-0 z-0 bg-muted-foreground/30 transition-all duration-300"
+              style="width: {swarmPct}%"
+              title="Swarm consensus {swarmPct.toFixed(1)}%"
+            ></div>
+          {/if}
           <div
-            class="h-full bg-stat-leecher transition-all duration-300 flex items-center justify-end pr-2"
+            class="relative z-10 h-full bg-stat-leecher transition-all duration-300 flex items-center justify-end pr-2"
             style="width: {torrentCompletion}%"
           >
             {#if torrentCompletion >= 10}
@@ -53,6 +69,17 @@
             {/if}
           </div>
         </div>
+        {#if showSwarmBand}
+          <div class="mt-1.5 flex items-center gap-1.5">
+            <span
+              class="inline-block h-2 w-2 shrink-0 rounded-full bg-muted-foreground/40"
+              aria-hidden="true"
+            ></span>
+            <span class="text-[0.7rem] text-muted-foreground"
+              >Swarm consensus {swarmPct.toFixed(0)}%</span
+            >
+          </div>
+        {/if}
         {#if torrentCompletion >= 100}
           <p class="text-xs text-stat-upload mt-1">Download complete — now seeding</p>
         {/if}

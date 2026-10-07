@@ -137,6 +137,8 @@
   let networkStatus = $state(null);
   let networkStatusLoading = $state(false);
   let networkStatusError = $state(null);
+  // Swarm consensus from backend (server mode only)
+  let swarmConsensus = $state(null);
   // Debounce timer for syncing config to server
   let configSyncTimeout = null;
 
@@ -908,6 +910,16 @@
 
           instanceActions.updateInstance(instanceId, updates);
 
+          // Fetch swarm snapshot in server mode (fail silent)
+          if (isServer) {
+            try {
+              const swarm = await api.getSwarm(instanceId);
+              swarmConsensus = swarm?.consensus_percent ?? null;
+            } catch {
+              swarmConsensus = null;
+            }
+          }
+
           if (await handlePostStopDelete(instanceId, stats)) {
             return;
           }
@@ -958,6 +970,7 @@
       activeLiveStatsIntervalId = null;
     }
     activeLiveStatsInstanceId = null;
+    swarmConsensus = null;
   }
 
   // Start tracker announce polling for an instance (created for ALL running instances)
@@ -1768,6 +1781,7 @@
                     stopAtSeedTimeHours={$activeInstance.stopAtSeedTimeHours}
                     {formatBytes}
                     {formatDuration}
+                    swarmConsensus={swarmConsensus}
                   />
                 {/if}
               </div>
