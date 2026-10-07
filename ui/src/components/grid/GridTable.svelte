@@ -172,20 +172,6 @@ let view = $derived(
   let offsetY = $derived(view.offsetY);
   let totalHeight = $derived(view.totalHeight);
 
-  function formatBytes(bytes) {
-    if (!bytes || bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  }
-
-  function formatRate(rate) {
-    if (!rate || rate === 0) return '-';
-    if (rate >= 1000) return (rate / 1024).toFixed(1) + ' MB/s';
-    return rate.toFixed(1) + ' KB/s';
-  }
-
   function getStateIcon(state) {
     switch (state?.toLowerCase()) {
       case 'starting':
