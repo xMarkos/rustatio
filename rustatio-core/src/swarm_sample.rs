@@ -123,21 +123,33 @@ pub fn rotate_take(peers: &[SocketAddr], offset: usize, n: usize) -> Vec<SocketA
 /// Human-readable gate state for the API: the first unsatisfied gate
 /// condition wins, so `paced=false` is never ambiguous about *why* the
 /// mechanism is off. Pure for unit tests.
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 pub fn describe_gate(
     completion: f64,
     download_intent: f64,
     seeders: i64,
+    leechers: i64,
     has_peers: bool,
     snapshot_stale: bool,
     paced: bool,
     pacing_reason: Option<&str>,
+    min_seed_fraction: f64,
 ) -> (bool, String) {
+    let total = seeders + leechers;
+    let seed_fraction = if total > 0 { seeders as f64 / total as f64 } else { 0.0 };
     if completion >= 100.0 {
         (false, "complete".to_string())
     } else if download_intent <= 0.0 {
         (false, "not downloading".to_string())
-    } else if seeders != 1 {
-        (false, format!("{seeders} seeders (need exactly 1)"))
+    } else if seed_fraction < min_seed_fraction {
+        (
+            false,
+            format!(
+                "seed fraction {:.0}% (need ≥{:.0}%)",
+                seed_fraction * 100.0,
+                min_seed_fraction * 100.0
+            ),
+        )
     } else if !has_peers {
         (false, "no peers from tracker yet".to_string())
     } else if snapshot_stale {
@@ -145,18 +157,19 @@ pub fn describe_gate(
     } else if paced {
         (true, pacing_reason.unwrap_or("pacing").to_string())
     } else {
-        (true, "tracking lone-seeder swarm".to_string())
+        (true, "tracking seed-heavy swarm".to_string())
     }
 }
 
 pub fn now_unix() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 fn to_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
-        s.push_str(&format!("{b:02x}"));
+        let _ = write!(s, "{b:02x}");
     }
     s
 }
@@ -213,17 +226,15 @@ async fn sample_one_peer(
         return None;
     }
     log_debug!("Swarm dial {addr}: connecting");
-    let mut stream =
-        match tokio::time::timeout(config.connect_timeout, TcpStream::connect(addr)).await {
-            Ok(Ok(s)) => {
-                log_debug!("Swarm peer {addr}: connected, sending handshake");
-                s
-            }
-            _ => {
-                log_debug!("Swarm dial {addr}: connect failed or timed out");
-                return None;
-            }
-        };
+    let mut stream = if let Ok(Ok(s)) =
+        tokio::time::timeout(config.connect_timeout, TcpStream::connect(addr)).await
+    {
+        log_debug!("Swarm peer {addr}: connected, sending handshake");
+        s
+    } else {
+        log_debug!("Swarm dial {addr}: connect failed or timed out");
+        return None;
+    };
 
     // 68-byte handshake: len + protocol + reserved + info_hash + peer_id.
     let mut hs = [0u8; HANDSHAKE_LEN];
@@ -271,7 +282,7 @@ async fn sample_one_peer(
                 return None;
             }
             let have: u32 = bitfield.iter().map(|b| b.count_ones()).sum();
-            let percent = (have as f64 / total_pieces as f64 * 100.0).clamp(0.0, 100.0);
+            let percent = (f64::from(have) / total_pieces as f64 * 100.0).clamp(0.0, 100.0);
             log_debug!("Swarm peer {addr}: bitfield {percent:.1}%");
             return Some(PeerSample {
                 addr: addr.to_string(),
@@ -307,9 +318,13 @@ pub struct PaceDecision {
     pub delta: f64,
 }
 
-/// Median peer completion after exclusions: drop seeds/liars at or above
-/// the seed threshold, take the median, then trim suspicious highs above
-/// median + band and re-take the median. None when nothing usable remains.
+/// Median peer completion after exclusions:
+/// - Drop seeds/liars at or above the seed threshold
+/// - Take the median
+/// - Trim suspicious highs above median + band
+/// - Re-take the median
+///
+/// Returns None when nothing usable remains.
 pub fn trimmed_median(samples: &[PeerSample], config: &SwarmSampleConfig) -> Option<f64> {
     let mut vals: Vec<f64> =
         samples.iter().map(|s| s.percent).filter(|p| *p < config.seed_exclude_percent).collect();
@@ -335,15 +350,19 @@ fn percentile(sorted: &[f64], percent: f64) -> f64 {
     let rank = percent / 100.0 * (sorted.len() - 1) as f64;
     let lo = rank.floor() as usize;
     let hi = rank.ceil() as usize;
-    sorted[lo] + (sorted[hi] - sorted[lo]) * (rank - lo as f64)
+    (sorted[hi] - sorted[lo]).mul_add(rank - lo as f64, sorted[lo])
 }
 
-/// Pace law with three zones: full configured speed while at or behind the
-/// projected swarm P, swarm-speed matching inside the band (P, P+delta],
-/// full hold beyond it. The cap is never a boost: the caller clamps it to
-/// its configured rate. None with no consensus history (fail open). The
-/// band covers a full cycle of estimated swarm motion so the decision line
-/// moves with the swarm instead of sawtoothing 0/max around a static one.
+/// Pace law with three zones:
+/// - Full configured speed while at or behind projected swarm P
+/// - Swarm-speed matching inside the band (P, P+delta]
+/// - Full hold beyond it
+///
+/// The cap is never a boost: the caller clamps it to its configured rate.
+/// None with no consensus history (fail open). The band covers a full cycle
+/// of estimated swarm motion so the decision line moves with the swarm
+/// instead of sawtoothing 0/max around a static one.
+#[allow(clippy::too_many_arguments)]
 pub fn pace_decision(
     our_completion: f64,
     history: &[(u64, f64)],
@@ -359,20 +378,26 @@ pub fn pace_decision(
     let age = now.saturating_sub(at) as f64;
     let projected = consensus + speed * age;
     let one_piece = if total_pieces > 0 { 100.0 / total_pieces as f64 } else { 0.0 };
-    let delta = config
-        .epsilon_min_percent
-        .max(one_piece)
-        .max(config.velocity_k * speed * config.resample_interval.as_secs_f64());
+    // Band (delta): when at or behind projected, cover k resample intervals
+    // of swarm motion to avoid sawtooth. When AHEAD of projected, use tight
+    // band (epsilon/one_piece) so we don't project the swarm's forward motion
+    // into our allowed lead. This prevents finishing minutes early on steady swarms.
+    let delta = if our_completion <= projected {
+        config
+            .epsilon_min_percent
+            .max(one_piece)
+            .max(config.velocity_k * speed * config.resample_interval.as_secs_f64())
+    } else {
+        config.epsilon_min_percent.max(one_piece)
+    };
     // Completion-phase escape hatch: far along ourselves in a mostly-seed
     // swarm, finish at full speed like everyone else did. One-way per
     // torrent, so no oscillation risk. Liar-safe: fake seeds inflate the
     // fraction, but young swarms have large leecher denominators and mid-O
     // torrents never reach the ours threshold.
-    let phase_finish = seed_fraction
-        .map(|s| {
-            our_completion >= config.phase_min_ours_percent && s >= config.phase_min_seed_fraction
-        })
-        .unwrap_or(false);
+    let phase_finish = seed_fraction.is_some_and(|s| {
+        our_completion >= config.phase_min_ours_percent && s >= config.phase_min_seed_fraction
+    });
     if phase_finish {
         return Some(PaceDecision {
             consensus,
@@ -418,34 +443,45 @@ mod tests {
     #[test]
     fn gate_reason_names_first_failure() {
         // Complete beats everything else.
-        assert_eq!(describe_gate(100.0, 0.0, 5, false, true, false, None).0, false);
-        assert_eq!(describe_gate(100.0, 0.0, 5, false, true, false, None).1, "complete");
-        // Order: downloading -> lone seeder -> peers -> freshness.
-        assert_eq!(describe_gate(20.0, 0.0, 1, true, false, false, None).1, "not downloading");
+        assert_eq!(describe_gate(100.0, 0.0, 5, 5, false, true, false, None, 0.7).0, false);
+        assert_eq!(describe_gate(100.0, 0.0, 5, 5, false, true, false, None, 0.7).1, "complete");
+        // Order: downloading -> seed fraction -> peers -> freshness.
         assert_eq!(
-            describe_gate(20.0, 5.0, 3, true, false, false, None).1,
-            "3 seeders (need exactly 1)"
+            describe_gate(20.0, 0.0, 1, 1, true, false, false, None, 0.7).1,
+            "not downloading"
         );
+        // 3 seeders, 7 leechers = 30% seed fraction < 70% threshold
         assert_eq!(
-            describe_gate(20.0, 5.0, 1, false, false, false, None).1,
+            describe_gate(20.0, 5.0, 3, 7, true, false, false, None, 0.7).1,
+            "seed fraction 30% (need ≥70%)"
+        );
+        // 7 seeders, 3 leechers = 70% seed fraction >= 70% threshold -> passes seed fraction check
+        assert_eq!(
+            describe_gate(20.0, 5.0, 7, 3, false, false, false, None, 0.7).1,
             "no peers from tracker yet"
         );
-        assert_eq!(describe_gate(20.0, 5.0, 1, true, true, false, None).1, "no fresh swarm sample");
+        // 10 seeders, 0 leechers = 100% seed fraction >= 70% threshold
+        assert_eq!(
+            describe_gate(20.0, 5.0, 10, 0, true, true, false, None, 0.7).1,
+            "no fresh swarm sample"
+        );
         // Active reveals pacing mode, not just a boolean.
         let (on, why) = describe_gate(
             20.0,
             5.0,
-            1,
+            10,
+            0,
             true,
             false,
             true,
             Some("matching swarm speed (20.0% vs 4.4%)"),
+            0.7,
         );
         assert!(on);
         assert!(why.contains("matching"));
-        let (on, why) = describe_gate(20.0, 5.0, 1, true, false, false, None);
+        let (on, why) = describe_gate(20.0, 5.0, 10, 0, true, false, false, None, 0.7);
         assert!(on);
-        assert_eq!(why, "tracking lone-seeder swarm");
+        assert_eq!(why, "tracking seed-heavy swarm");
     }
 
     #[test]

@@ -153,11 +153,11 @@
     targetDownloadRate = progressive.targetDownloadRate ?? 200;
     progressiveDurationHours = progressive.progressiveDurationHours ?? 1;
     swarmPacingEnabled = swarm.swarmPacingEnabled ?? true;
-    swarmMaxPeers = swarm.swarmMaxPeers;
-    swarmResampleIntervalSecs = swarm.swarmResampleIntervalSecs;
-    swarmEpsilonMinPercent = swarm.swarmEpsilonMinPercent;
-    swarmPhaseMinOursPercent = swarm.swarmPhaseMinOursPercent;
-    swarmPhaseMinSeedFraction = swarm.swarmPhaseMinSeedFraction;
+    swarmMaxPeers = swarm.swarmMaxPeers ?? 8;
+    swarmResampleIntervalSecs = swarm.swarmResampleIntervalSecs ?? 120;
+    swarmEpsilonMinPercent = swarm.swarmEpsilonMinPercent ?? 1.0;
+    swarmPhaseMinOursPercent = swarm.swarmPhaseMinOursPercent ?? 90.0;
+    swarmPhaseMinSeedFraction = swarm.swarmPhaseMinSeedFraction ?? 0.7;
     stopAtRatioEnabled = stopConditions.stopAtRatioEnabled ?? false;
     stopAtRatio = stopConditions.stopAtRatio ?? 2.0;
     randomizeRatio = stopConditions.randomizeRatio ?? false;
