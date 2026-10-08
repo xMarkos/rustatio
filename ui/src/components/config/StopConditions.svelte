@@ -112,28 +112,29 @@
     {/if}
   </div>
 
-<<<<<<< HEAD
-  <StopConditionSettings
-    bind:stopAtRatioEnabled={localStopAtRatioEnabled}
-    bind:stopAtRatio={localStopAtRatio}
-    bind:randomizeRatio={localRandomizeRatio}
-    bind:randomRatioRangePercent={localRandomRatioRangePercent}
-    {effectiveStopAtRatio}
-    bind:stopAtUploadedEnabled={localStopAtUploadedEnabled}
-    bind:stopAtUploadedGB={localStopAtUploadedGB}
-    bind:stopAtDownloadedEnabled={localStopAtDownloadedEnabled}
-    bind:stopAtDownloadedGB={localStopAtDownloadedGB}
-    bind:stopAtSeedTimeEnabled={localStopAtSeedTimeEnabled}
-    bind:stopAtSeedTimeHours={localStopAtSeedTimeHours}
-    bind:idleWhenNoLeechers={localIdleWhenNoLeechers}
-    bind:idleWhenNoSeeders={localIdleWhenNoSeeders}
-    bind:minLeechers={localMinLeechers}
-    bind:maxSeederLeecherRatio={localMaxSeederLeecherRatio}
-    bind:postStopAction={localPostStopAction}
-    {completionPercent}
-    disabled={isRunning}
-    onchange={updates => {
-      for (const [key, value] of Object.entries(updates)) updateValue(key, value);
-    }}
-  />
+  <div class="p-2.5">
+    <StopConditionSettings
+      bind:stopAtRatioEnabled={localStopAtRatioEnabled}
+      bind:stopAtRatio={localStopAtRatio}
+      bind:randomizeRatio={localRandomizeRatio}
+      bind:randomRatioRangePercent={localRandomRatioRangePercent}
+      {effectiveStopAtRatio}
+      bind:stopAtUploadedEnabled={localStopAtUploadedEnabled}
+      bind:stopAtUploadedGB={localStopAtUploadedGB}
+      bind:stopAtDownloadedEnabled={localStopAtDownloadedEnabled}
+      bind:stopAtDownloadedGB={localStopAtDownloadedGB}
+      bind:stopAtSeedTimeEnabled={localStopAtSeedTimeEnabled}
+      bind:stopAtSeedTimeHours={localStopAtSeedTimeHours}
+      bind:idleWhenNoLeechers={localIdleWhenNoLeechers}
+      bind:idleWhenNoSeeders={localIdleWhenNoSeeders}
+      bind:minLeechers={localMinLeechers}
+      bind:maxSeederLeecherRatio={localMaxSeederLeecherRatio}
+      bind:postStopAction={localPostStopAction}
+      {completionPercent}
+      disabled={isRunning}
+      onchange={updates => {
+        for (const [key, value] of Object.entries(updates)) updateValue(key, value);
+      }}
+    />
+  </div>
 </Card>
