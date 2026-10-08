@@ -91,9 +91,8 @@ pub async fn instances_sse(
         let _ = shutdown_rx.wait_for(|stop| *stop).await;
     };
 
-    Sse::new(initial.chain(live))
+    Sse::new(futures::StreamExt::take_until(initial.chain(live), closing))
         .keep_alive(KeepAlive::default())
-        .take_until(closing)
 }
 
 pub fn router() -> Router<ServerState> {
