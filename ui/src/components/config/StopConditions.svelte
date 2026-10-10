@@ -17,6 +17,8 @@
     stopAtSeedTimeHours,
     idleWhenNoLeechers,
     idleWhenNoSeeders,
+    minLeechers,
+    maxSeederLeecherRatio,
     postStopAction,
     completionPercent = 100,
     isRunning,
@@ -36,6 +38,8 @@
   let localStopAtSeedTimeHours = $state(24);
   let localIdleWhenNoLeechers = $state(false);
   let localIdleWhenNoSeeders = $state(false);
+  let localMinLeechers = $state(0);
+  let localMaxSeederLeecherRatio = $state(null);
   let localPostStopAction = $state('idle');
 
   // Track if we're currently editing to prevent external updates from interfering
@@ -57,6 +61,8 @@
       localStopAtSeedTimeHours = stopAtSeedTimeHours;
       localIdleWhenNoLeechers = idleWhenNoLeechers;
       localIdleWhenNoSeeders = idleWhenNoSeeders;
+      localMinLeechers = minLeechers ?? 0;
+      localMaxSeederLeecherRatio = maxSeederLeecherRatio ?? null;
       localPostStopAction = postStopAction;
     }
   });
@@ -83,6 +89,8 @@
       localStopAtSeedTimeEnabled,
       localIdleWhenNoLeechers,
       localIdleWhenNoSeeders,
+      localMinLeechers,
+      localMaxSeederLeecherRatio,
     ].filter(Boolean).length
   );
 </script>
@@ -119,6 +127,8 @@
       bind:stopAtSeedTimeHours={localStopAtSeedTimeHours}
       bind:idleWhenNoLeechers={localIdleWhenNoLeechers}
       bind:idleWhenNoSeeders={localIdleWhenNoSeeders}
+      bind:minLeechers={localMinLeechers}
+      bind:maxSeederLeecherRatio={localMaxSeederLeecherRatio}
       bind:postStopAction={localPostStopAction}
       {completionPercent}
       disabled={isRunning}

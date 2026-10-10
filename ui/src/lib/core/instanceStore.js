@@ -106,6 +106,9 @@ function createDefaultInstance(id, defaults = {}) {
       defaults.idleWhenNoLeechers !== undefined ? defaults.idleWhenNoLeechers : false,
     idleWhenNoSeeders:
       defaults.idleWhenNoSeeders !== undefined ? defaults.idleWhenNoSeeders : false,
+    minLeechers: defaults.minLeechers !== undefined ? defaults.minLeechers : 0,
+    maxSeederLeecherRatio:
+      defaults.maxSeederLeecherRatio !== undefined ? defaults.maxSeederLeecherRatio : null,
 
     // Post stop action
     postStopAction: defaults.postStopAction !== undefined ? defaults.postStopAction : 'idle',
@@ -248,6 +251,8 @@ function loadSessionFromStorage(config = null) {
         stopAtSeedTimeHours: inst.stop_at_seed_time_hours,
         idleWhenNoLeechers: inst.idle_when_no_leechers || false,
         idleWhenNoSeeders: inst.idle_when_no_seeders || false,
+        minLeechers: inst.min_leechers || 0,
+        maxSeederLeecherRatio: inst.max_seeder_leecher_ratio ?? null,
         postStopAction: inst.post_stop_action || 'idle',
         progressiveRatesEnabled: inst.progressive_rates_enabled,
         targetUploadRate: inst.target_upload_rate,
@@ -324,6 +329,8 @@ function buildInstanceDefaultsFromServer(serverInst) {
     stopAtSeedTimeHours: (config.stop_at_seed_time || 0) / 3600,
     idleWhenNoLeechers: config.idle_when_no_leechers || false,
     idleWhenNoSeeders: config.idle_when_no_seeders || false,
+    minLeechers: config.min_leechers || 0,
+    maxSeederLeecherRatio: config.max_seeder_leecher_ratio ?? null,
     postStopAction: config.post_stop_action || 'idle',
     progressiveRatesEnabled: config.progressive_rates || false,
     targetUploadRate: config.target_upload_rate || 100,
