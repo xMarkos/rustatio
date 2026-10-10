@@ -178,7 +178,14 @@ pub fn describe_gate(
     } else if paced {
         (true, pacing_reason.unwrap_or("pacing").to_string())
     } else {
-        (true, "tracking seed-heavy swarm".to_string())
+        (
+            true,
+            format!(
+                "tracking swarm (seed fraction {:.0}%, need <{:.0}%)",
+                frac * 100.0,
+                min_seed_fraction * 100.0
+            ),
+        )
     }
 }
 
@@ -502,7 +509,7 @@ mod tests {
         assert!(why.contains("matching"));
         let (on, why) = describe_gate(20.0, 5.0, 1, 9, true, false, false, None, 0.7);
         assert!(on);
-        assert_eq!(why, "tracking seed-heavy swarm");
+        assert_eq!(why, "tracking swarm (seed fraction 10%, need <70%)");
     }
 
     #[test]
