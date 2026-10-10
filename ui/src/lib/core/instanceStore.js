@@ -125,6 +125,20 @@ function createDefaultInstance(id, defaults = {}) {
     progressiveDurationHours:
       defaults.progressiveDurationHours !== undefined ? defaults.progressiveDurationHours : 1,
 
+    // Swarm pacing
+    swarmPacingEnabled:
+      defaults.swarmPacingEnabled !== undefined ? defaults.swarmPacingEnabled : true,
+    swarmMaxPeers:
+      defaults.swarmMaxPeers !== undefined ? defaults.swarmMaxPeers : 8,
+    swarmResampleIntervalSecs:
+      defaults.swarmResampleIntervalSecs !== undefined ? defaults.swarmResampleIntervalSecs : 120,
+    swarmEpsilonMinPercent:
+      defaults.swarmEpsilonMinPercent !== undefined ? defaults.swarmEpsilonMinPercent : 1.0,
+    swarmPhaseMinOursPercent:
+      defaults.swarmPhaseMinOursPercent !== undefined ? defaults.swarmPhaseMinOursPercent : 90.0,
+    swarmPhaseMinSeedFraction:
+      defaults.swarmPhaseMinSeedFraction !== undefined ? defaults.swarmPhaseMinSeedFraction : 0.7,
+
     // Status
     statusMessage: 'Select a torrent file to begin',
     statusType: 'warning',
@@ -251,7 +265,13 @@ function loadSessionFromStorage(config = null) {
         stopAtSeedTimeHours: inst.stop_at_seed_time_hours,
         idleWhenNoLeechers: inst.idle_when_no_leechers || false,
         idleWhenNoSeeders: inst.idle_when_no_seeders || false,
-        minLeechers: inst.min_leechers || 0,
+        minLeechers: inst.min_leechers ?? 0,
+        swarmPacingEnabled: inst.swarm_pacing_enabled ?? true,
+        swarmMaxPeers: inst.swarm_max_peers ?? 8,
+        swarmResampleIntervalSecs: inst.swarm_resample_interval_secs ?? 120,
+        swarmEpsilonMinPercent: inst.swarm_epsilon_min_percent ?? 1.0,
+        swarmPhaseMinOursPercent: inst.swarm_phase_min_ours_percent ?? 90.0,
+        swarmPhaseMinSeedFraction: inst.swarm_phase_min_seed_fraction ?? 0.7,
         maxSeederLeecherRatio: inst.max_seeder_leecher_ratio ?? null,
         postStopAction: inst.post_stop_action || 'idle',
         progressiveRatesEnabled: inst.progressive_rates_enabled,
@@ -329,7 +349,13 @@ function buildInstanceDefaultsFromServer(serverInst) {
     stopAtSeedTimeHours: (config.stop_at_seed_time || 0) / 3600,
     idleWhenNoLeechers: config.idle_when_no_leechers || false,
     idleWhenNoSeeders: config.idle_when_no_seeders || false,
-    minLeechers: config.min_leechers || 0,
+    minLeechers: config.min_leechers ?? 0,
+    swarmPacingEnabled: config.swarm_pacing_enabled ?? true,
+    swarmMaxPeers: config.swarm_max_peers ?? 8,
+    swarmResampleIntervalSecs: config.swarm_resample_interval_secs ?? 120,
+    swarmEpsilonMinPercent: config.swarm_epsilon_min_percent ?? 1.0,
+    swarmPhaseMinOursPercent: config.swarm_phase_min_ours_percent ?? 90.0,
+    swarmPhaseMinSeedFraction: config.swarm_phase_min_seed_fraction ?? 0.7,
     maxSeederLeecherRatio: config.max_seeder_leecher_ratio ?? null,
     postStopAction: config.post_stop_action || 'idle',
     progressiveRatesEnabled: config.progressive_rates || false,

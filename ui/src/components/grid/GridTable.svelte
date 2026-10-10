@@ -159,7 +159,7 @@
     scrollTop = e.target.scrollTop;
   }
 
-  let view = $derived(
+let view = $derived(
     getWindow({
       total: data.length,
       scrollTop,
@@ -171,6 +171,51 @@
   let visibleData = $derived(data.slice(view.startIndex, view.endIndex));
   let offsetY = $derived(view.offsetY);
   let totalHeight = $derived(view.totalHeight);
+
+  function getStateIcon(state) {
+    switch (state?.toLowerCase()) {
+      case 'starting':
+      case 'stopping':
+        return LoaderCircle;
+      case 'running':
+      case 'paced':
+        return Circle;
+      case 'paused':
+        return Pause;
+      case 'idle':
+        return Moon;
+      case 'stopped':
+        return Square;
+      default:
+        return Circle;
+    }
+  }
+
+  function getStateColor(state) {
+    switch (state?.toLowerCase()) {
+      case 'starting':
+        return 'text-primary';
+      case 'stopping':
+        return 'text-stat-danger';
+      case 'running':
+        return 'text-stat-upload';
+      case 'paced':
+        return 'text-stat-download';
+      case 'paused':
+        return 'text-stat-ratio';
+      case 'idle':
+        return 'text-violet-500';
+      case 'stopped':
+        return 'text-muted-foreground';
+      default:
+        return 'text-muted-foreground';
+    }
+  }
+
+  function isAnimatedState(state) {
+    const value = state?.toLowerCase();
+    return value === 'starting' || value === 'stopping';
+  }
 
   function getIssueMessage(instance) {
     return getTrackerIssue(instance)?.statusMessage || null;

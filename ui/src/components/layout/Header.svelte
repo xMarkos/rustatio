@@ -17,6 +17,21 @@
 
   const repository = 'https://github.com/takitsu21/rustatio';
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+  const statusFrameClass = {
+    idle: 'border-stat-upload/20',
+    running: 'border-primary/20',
+    paused: 'border-stat-ratio/20',
+    idling: 'border-stat-ratio/20',
+    paced: 'border-stat-download/20',
+    success: 'border-stat-upload/20',
+    warning: 'border-stat-ratio/20',
+    error: 'border-destructive/20',
+  };
+
+  function getStatusFrameClass(type) {
+    return statusFrameClass[type] || 'border-border/55';
+  }
 </script>
 
 <header class="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-2">

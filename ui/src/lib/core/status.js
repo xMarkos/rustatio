@@ -80,6 +80,14 @@ export function getIdlingStatus(reason) {
   };
 }
 
+export function getPacingStatus(reason) {
+  return {
+    statusMessage: reason ? `Pacing - ${reason}` : 'Pacing',
+    statusType: 'paced',
+    statusIcon: 'turtle',
+  };
+}
+
 export function getStatusFromStats(stats) {
   const trackerIssue = getTrackerIssue(stats);
   if (trackerIssue) {
@@ -88,6 +96,10 @@ export function getStatusFromStats(stats) {
 
   if (stats?.is_idling) {
     return getIdlingStatus(stats.idling_reason);
+  }
+
+  if (stats?.is_paced) {
+    return getPacingStatus(stats.pacing_reason);
   }
 
   return getRunningStatus();

@@ -1,6 +1,7 @@
 use crate::protocol::{
     AnnounceRequest, AnnounceResponse, TrackerClient, TrackerError, TrackerEvent,
 };
+use crate::swarm_sample::{SwarmSampleConfig, SwarmSnapshot};
 use crate::torrent::{ClientConfig, ClientType, TorrentInfo};
 use crate::{log_debug, log_info, log_trace, log_warn};
 #[cfg(not(target_arch = "wasm32"))]
@@ -8,6 +9,7 @@ use crate::{peer_listener::handle_is_connectable, protocol::peer_id_to_array};
 use instant::Instant;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -134,6 +136,24 @@ pub struct FakerConfig {
     /// What to do when stop conditions are met
     #[serde(default)]
     pub post_stop_action: PostStopAction,
+    /// Throttle download to swarm consensus (experimental, v1 branch).
+    #[serde(default = "default_swarm_pacing_enabled")]
+    pub swarm_pacing_enabled: bool,
+    /// Max peers dialed per swarm sample cycle.
+    #[serde(default = "default_swarm_max_peers")]
+    pub swarm_max_peers: u32,
+    /// Minimum gap between swarm sample cycles, seconds.
+    #[serde(default = "default_swarm_resample_interval_secs")]
+    pub swarm_resample_interval_secs: u64,
+    /// Hysteresis floor for pacing, percentage points.
+    #[serde(default = "default_swarm_epsilon_min_percent")]
+    pub swarm_epsilon_min_percent: f64,
+    /// Completion-phase hatch arm level, percent.
+    #[serde(default = "default_swarm_phase_min_ours_percent")]
+    pub swarm_phase_min_ours_percent: f64,
+    /// Completion-phase hatch swarm-completeness fraction.
+    #[serde(default = "default_swarm_phase_min_seed_fraction")]
+    pub swarm_phase_min_seed_fraction: f64,
 }
 
 /// UI-friendly preset settings format (matches frontend)
@@ -166,6 +186,12 @@ pub struct PresetSettings {
     pub min_leechers: Option<u64>,
     pub max_seeder_leecher_ratio: Option<f64>,
     pub post_stop_action: Option<String>,
+    pub swarm_pacing_enabled: Option<bool>,
+    pub swarm_max_peers: Option<u32>,
+    pub swarm_resample_interval_secs: Option<u64>,
+    pub swarm_epsilon_min_percent: Option<f64>,
+    pub swarm_phase_min_ours_percent: Option<f64>,
+    pub swarm_phase_min_seed_fraction: Option<f64>,
     // Progressive rates
     pub progressive_rates_enabled: Option<bool>,
     pub target_upload_rate: Option<f64>,
@@ -230,6 +256,12 @@ impl From<PresetSettings> for FakerConfig {
             target_upload_rate: p.target_upload_rate,
             target_download_rate: p.target_download_rate,
             progressive_duration: (p.progressive_duration_hours.unwrap_or(1.0) * 3600.0) as u64,
+            swarm_pacing_enabled: true,
+            swarm_max_peers: p.swarm_max_peers.unwrap_or(8),
+            swarm_resample_interval_secs: p.swarm_resample_interval_secs.unwrap_or(120),
+            swarm_epsilon_min_percent: p.swarm_epsilon_min_percent.unwrap_or(1.0),
+            swarm_phase_min_ours_percent: p.swarm_phase_min_ours_percent.unwrap_or(90.0),
+            swarm_phase_min_seed_fraction: p.swarm_phase_min_seed_fraction.unwrap_or(0.7),
         }
     }
 }
@@ -252,6 +284,30 @@ const fn default_random_ratio_range() -> f64 {
 
 const fn default_scrape_interval() -> u64 {
     60 // 60 seconds
+}
+
+const fn default_swarm_pacing_enabled() -> bool {
+    true
+}
+
+const fn default_swarm_max_peers() -> u32 {
+    8
+}
+
+const fn default_swarm_resample_interval_secs() -> u64 {
+    120
+}
+
+const fn default_swarm_epsilon_min_percent() -> f64 {
+    1.0
+}
+
+const fn default_swarm_phase_min_ours_percent() -> f64 {
+    90.0
+}
+
+const fn default_swarm_phase_min_seed_fraction() -> f64 {
+    0.7
 }
 
 impl Default for FakerConfig {
@@ -286,6 +342,12 @@ impl Default for FakerConfig {
             target_download_rate: None,
             progressive_duration: 3600,
             post_stop_action: PostStopAction::Idle,
+            swarm_pacing_enabled: true,
+            swarm_max_peers: 8,
+            swarm_resample_interval_secs: 120,
+            swarm_epsilon_min_percent: 1.0,
+            swarm_phase_min_ours_percent: 90.0,
+            swarm_phase_min_seed_fraction: 0.7,
         }
     }
 }
@@ -326,6 +388,9 @@ pub struct FakerStats {
     // === IDLE STATE ===
     pub is_idling: bool,               // True when idling due to no peers
     pub idling_reason: Option<String>, // "no_leechers" or "no_seeders"
+    pub is_paced: bool,                // True when swarm pacing throttles download
+    pub pacing_reason: Option<String>, // e.g. "ahead of swarm (11.6% vs 1.6%)"
+    pub download_intent: f64,          // Pre-pace download rate for this tick (KB/s)
 
     // === TRACKER STATE ===
     #[serde(default)]
@@ -403,6 +468,24 @@ pub struct RatioFaker {
     // Scrape
     last_scrape: Instant,
     scrape_supported: bool,
+
+    // Swarm observer (v1 one-shot sampler)
+    last_peers: Vec<SocketAddr>,
+    swarm_snapshot: SwarmSnapshot,
+    last_swarm_sample: Option<Instant>,
+    swarm_config: SwarmSampleConfig,
+    last_gate_log: Option<Instant>,
+
+    // Public addresses for announce (helper-probed, hourly refresh)
+    ext_v4: Option<String>,
+    ext_v6: Option<String>,
+    ext_probed_at: Option<Instant>,
+
+    // Swarm pacing state: consensus history ring + EMA velocity.
+    consensus_history: Vec<(u64, f64)>,
+    swarm_velocity: f64,
+    last_gate_active: Option<bool>,
+    sample_offset: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -656,6 +739,9 @@ impl RatioFaker {
 
             // Idle state
             is_idling: false,
+            is_paced: false,
+            pacing_reason: None,
+            download_intent: 0.0,
             idling_reason: None,
             tracker_error: None,
             tracker_retry_attempt: 0,
@@ -703,6 +789,7 @@ impl RatioFaker {
             post_stop_action: config.post_stop_action,
         };
 
+        let swarm_config = Self::swarm_config_from(&config);
         Ok(Self {
             torrent,
             config,
@@ -716,6 +803,18 @@ impl RatioFaker {
             announce_interval: Duration::from_mins(30), // Default 30 minutes
             last_scrape: Instant::now(),
             scrape_supported: true,
+            last_peers: Vec::new(),
+            swarm_snapshot: SwarmSnapshot::default(),
+            last_swarm_sample: None,
+            swarm_config,
+            last_gate_log: None,
+            ext_v4: None,
+            ext_v6: None,
+            ext_probed_at: None,
+            consensus_history: Vec::new(),
+            swarm_velocity: 0.0,
+            last_gate_active: None,
+            sample_offset: 0,
         })
     }
 
@@ -821,6 +920,139 @@ impl RatioFaker {
         }
     }
 
+    /// Build the sampler config from faker config: single funnel so live
+    /// config updates apply without restart.
+    fn swarm_config_from(config: &FakerConfig) -> SwarmSampleConfig {
+        SwarmSampleConfig {
+            max_peers: config.swarm_max_peers as usize,
+            resample_interval: Duration::from_secs(config.swarm_resample_interval_secs),
+            epsilon_min_percent: config.swarm_epsilon_min_percent,
+            phase_min_ours_percent: config.swarm_phase_min_ours_percent,
+            phase_min_seed_fraction: config.swarm_phase_min_seed_fraction,
+            ..SwarmSampleConfig::default()
+        }
+    }
+
+    const EXT_ADDR_TTL: Duration = Duration::from_secs(3600);
+
+    fn ext_addrs_stale(&self) -> bool {
+        self.ext_probed_at.map(|t| t.elapsed() >= Self::EXT_ADDR_TTL).unwrap_or(true)
+    }
+
+    fn store_ext_addrs(&mut self, v4: Option<String>, v6: Option<String>) {
+        if v4.is_some() {
+            self.ext_v4 = v4;
+        }
+        if v6.is_some() {
+            self.ext_v6 = v6;
+        }
+        self.ext_probed_at = Some(Instant::now());
+        log_debug!(
+            "External addresses: ipv4={} ipv6={}",
+            self.ext_v4.as_deref().unwrap_or("-"),
+            self.ext_v6.as_deref().unwrap_or("-")
+        );
+    }
+
+    /// Swarm pacing: zero download while our completion leads the projected
+    /// swarm consensus plus band. Never boosts. Fail open (full speed) when
+    /// disabled, gated out, or lacking fresh consensus. Sets stats flags.
+    fn apply_swarm_pacing(
+        &mut self,
+        download_rate: f64,
+    ) -> (f64, Option<crate::swarm_sample::PaceDecision>) {
+        self.stats.is_paced = false;
+        self.stats.pacing_reason = None;
+        if !self.config.swarm_pacing_enabled {
+            return (download_rate, None);
+        }
+        // Same gate as the sampler (evaluated per tick, never latched).
+        // Reads download_intent, NOT current_download_rate: the latter is the
+        // post-pace actuated value, and gating on it releases the throttle on
+        // the very next tick (engage/release limit cycle).
+        // Activation gate: seed fraction BELOW configured threshold (lone-seeder swarms).
+        // Escape hatch (phase_finish) is handled inside pace_decision.
+        if !crate::swarm_sample::pacing_gate_active(
+            self.stats.torrent_completion,
+            self.stats.download_intent,
+            self.stats.seeders,
+            self.stats.leechers,
+            self.swarm_config.phase_min_seed_fraction,
+        ) {
+            return (download_rate, None);
+        }
+        let cfg = &self.swarm_config;
+        let now = crate::swarm_sample::now_unix();
+        // Gate on fresh consensus history, not snapshot size: history points
+        // are already trimmed-median filtered, and thin samples (2 of 50)
+        // still track the swarm. Gating on size fail-opened forever while
+        // consensus was known.
+        let hist_fresh = self
+            .consensus_history
+            .last()
+            .map(|(t, _)| now.saturating_sub(*t) <= cfg.max_snapshot_age_secs)
+            .unwrap_or(false);
+        if !hist_fresh {
+            return (download_rate, None);
+        }
+        let Some(decision) = crate::swarm_sample::pace_decision(
+            self.stats.torrent_completion,
+            &self.consensus_history,
+            self.swarm_velocity,
+            crate::swarm_sample::now_unix(),
+            self.torrent.num_pieces as u64,
+            self.torrent.total_size,
+            self.seed_fraction(),
+            cfg,
+        ) else {
+            return (download_rate, None);
+        };
+        if decision.phase_finish {
+            log_info!(
+                "Swarm completion-phase finish: ours={:.1}% seeds={} leechers={} throttle lifted",
+                self.stats.torrent_completion,
+                self.stats.seeders,
+                self.stats.leechers
+            );
+            return (download_rate, Some(decision));
+        }
+        match decision.capped_rate {
+            // At or behind the swarm: full configured speed.
+            None => (download_rate, Some(decision)),
+            Some(cap) => {
+                let effective = download_rate.min(cap.max(0.0));
+                if effective < download_rate && download_rate > 0.0 {
+                    let holding = cap <= 0.0;
+                    self.stats.is_paced = true;
+                    self.stats.pacing_reason = Some(format!(
+                        "{} ({:.1}% vs {:.1}%)",
+                        if holding { "holding ahead of swarm" } else { "matching swarm speed" },
+                        self.stats.torrent_completion,
+                        decision.projected
+                    ));
+                    log_debug!(
+                        "Swarm pacing: capping download at {:.0} KB/s (ours={:.1}% projected={:.1}% band=+{:.1}% consensus={:.1}%)",
+                        effective,
+                        self.stats.torrent_completion,
+                        decision.projected,
+                        decision.delta,
+                        decision.consensus
+                    );
+                    return (effective, Some(decision));
+                }
+                (download_rate, Some(decision))
+            }
+        }
+    }
+
+    /// Tracker seed fraction for the completion-phase hatch. None when
+    /// the swarm is empty (hatch stays shut).
+    fn seed_fraction(&self) -> Option<f64> {
+        let total = self.stats.seeders + self.stats.leechers;
+        (total > 0)
+            .then(|| crate::swarm_sample::seed_fraction(self.stats.seeders, self.stats.leechers))
+    }
+
     fn apply_start_result(&mut self, result: Result<AnnounceResponse>) {
         match result {
             Ok(response) => {
@@ -833,6 +1065,18 @@ impl RatioFaker {
                 self.stats.last_announce = Some(Instant::now());
                 self.stats.next_announce = Some(Instant::now() + self.announce_interval);
                 self.stats.announce_count += 1;
+                self.last_peers = response.peers.clone();
+                log_debug!(
+                    "Swarm peers from announce: {} peers [{}]",
+                    response.peers.len(),
+                    response
+                        .peers
+                        .iter()
+                        .take(8)
+                        .map(|a| a.to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
 
                 log_info!(
                     "Started successfully. Seeders: {}, Leechers: {}, Interval: {}s",
@@ -1007,6 +1251,27 @@ impl RatioFaker {
 
         self.stats.is_idling = is_idling;
         self.stats.idling_reason = idling_reason;
+
+        // Swarm pacing runs on the effective (post-idling) rate, so a
+        // throttled tick pauses completion growth downstream.
+        // Intent is recorded first so pacing and sampler gates observe what
+        // this tick would do unpaced, not what pacing actuated last tick.
+        self.stats.download_intent = download_rate;
+        let was_paced = self.stats.is_paced;
+        let (download_rate, pace_decision) = self.apply_swarm_pacing(download_rate);
+        if self.stats.is_paced != was_paced {
+            if self.stats.is_paced {
+                log_info!(
+                    "Swarm pacing engaged: ours={:.1}% vs swarm {:.1}% (projected {:.1}%, band +{:.1}%)",
+                    self.stats.torrent_completion,
+                    pace_decision.as_ref().map(|d| d.consensus).unwrap_or(0.0),
+                    pace_decision.as_ref().map(|d| d.projected).unwrap_or(0.0),
+                    pace_decision.as_ref().map(|d| d.delta).unwrap_or(0.0)
+                );
+            } else {
+                log_info!("Swarm pacing released: ours={:.1}%", self.stats.torrent_completion);
+            }
+        }
 
         let completed = Self::apply_rate_and_transfer_updates(
             &mut self.stats,
@@ -1251,6 +1516,18 @@ impl RatioFaker {
                 self.stats.last_announce = Some(Instant::now());
                 self.stats.next_announce = Some(Instant::now() + self.announce_interval);
                 self.stats.announce_count += 1;
+                self.last_peers = response.peers.clone();
+                log_debug!(
+                    "Swarm peers from announce: {} peers [{}]",
+                    response.peers.len(),
+                    response
+                        .peers
+                        .iter()
+                        .take(8)
+                        .map(|a| a.to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
 
                 log_info!(
                     "Periodic announce complete. Seeders: {}, Leechers: {}",
@@ -1349,6 +1626,9 @@ impl RatioFaker {
             leechers: 0,
             state: FakerState::Stopped,
             is_idling: false,
+            is_paced: false,
+            pacing_reason: None,
+            download_intent: 0.0,
             idling_reason: None,
             tracker_error: None,
             tracker_retry_attempt: 0,
@@ -1447,6 +1727,7 @@ impl RatioFaker {
         self.stats.effective_stop_at_ratio = config.stop_at_ratio;
 
         self.config = config;
+        self.swarm_config = Self::swarm_config_from(&self.config);
 
         if self.stats.stop_condition_met
             && self.stats.state == FakerState::Running
@@ -1472,6 +1753,19 @@ impl RatioFaker {
             self.stats.left
         );
 
+        // Advertise public addresses (libtorrent-style ipv4/ipv6) so dual-stack
+        // trackers return both peer families. Helper-probed values win; public
+        // egress routes are the fallback. Private addresses are never announced.
+        let (egress_v4, egress_v6) =
+            crate::protocol::tracker::egress_addrs_for_tracker(self.torrent.get_tracker_url());
+        let adv_v4 = self.ext_v4.clone().or(egress_v4);
+        let adv_v6 = self.ext_v6.clone().or(egress_v6);
+        log_debug!(
+            "Announce addresses: ipv4={} ipv6={}",
+            adv_v4.as_deref().unwrap_or("-"),
+            adv_v6.as_deref().unwrap_or("-")
+        );
+
         AnnounceRequest {
             info_hash: self.torrent.info_hash,
             peer_id: self.peer_id.clone(),
@@ -1482,7 +1776,9 @@ impl RatioFaker {
             compact: true,
             no_peer_id: false,
             event,
-            ip: None,
+            ip: adv_v4.clone(),
+            ipv4: adv_v4,
+            ipv6: adv_v6,
             numwant: Some(self.config.num_want),
             key: Some(self.key.clone()),
             tracker_id: self.tracker_id.clone(),
@@ -1792,6 +2088,40 @@ impl RatioFakerHandle {
         Self { inner: Arc::new(Mutex::new(faker)), stats_tx, stats_rx }
     }
 
+    pub async fn swarm_snapshot(&self) -> SwarmSnapshot {
+        let guard = self.inner.lock().await;
+        let now = crate::swarm_sample::now_unix();
+        let age = guard.swarm_snapshot.sampled_at_unix.map(|t| now.saturating_sub(t));
+        let stale = age.map(|a| a > guard.swarm_config.max_snapshot_age_secs).unwrap_or(true);
+        let (gate_active, gate_reason) = crate::swarm_sample::describe_gate(
+            guard.stats.torrent_completion,
+            guard.stats.download_intent,
+            guard.stats.seeders,
+            guard.stats.leechers,
+            !guard.last_peers.is_empty(),
+            stale,
+            guard.stats.is_paced,
+            guard.stats.pacing_reason.as_deref(),
+            guard.swarm_config.phase_min_seed_fraction,
+        );
+        let mut snap = guard.swarm_snapshot.clone();
+        // Peer details older than an hour never come back to life: clear them
+        // so the endpoint cannot be mistaken for live data. Pacing itself
+        // runs off consensus history, unaffected by this display clearing.
+        if age.map(|a| a > 3600).unwrap_or(false) {
+            snap.peers.clear();
+            snap.consensus_percent = None;
+        }
+        snap.our_completion_percent = Some(guard.stats.torrent_completion);
+        snap.paced = guard.stats.is_paced;
+        snap.age_secs = age;
+        snap.stale = stale;
+        snap.velocity_pct_per_s = Some(guard.swarm_velocity);
+        snap.gate_active = gate_active;
+        snap.gate_reason = gate_reason;
+        snap
+    }
+
     pub fn stats_snapshot(&self) -> FakerStats {
         self.stats_rx.borrow().clone()
     }
@@ -1802,7 +2132,22 @@ impl RatioFakerHandle {
         f(&stats)
     }
 
+    /// Refresh helper-probed public addresses when stale (hourly at most).
+    /// The lock is released during the probe so updates never block on network.
+    async fn refresh_ext_addrs_if_stale(&self) {
+        let (tracker_url, stale) = {
+            let guard = self.inner.lock().await;
+            (guard.torrent.get_tracker_url().to_string(), guard.ext_addrs_stale())
+        };
+        if !stale {
+            return;
+        }
+        let (v4, v6) = crate::protocol::tracker::probe_public_addrs(&tracker_url).await;
+        self.inner.lock().await.store_ext_addrs(v4, v6);
+    }
+
     pub async fn start(&self) -> Result<()> {
+        self.refresh_ext_addrs_if_stale().await;
         let plan = {
             let mut guard = self.inner.lock().await;
             guard.begin_start()
@@ -1913,6 +2258,7 @@ impl RatioFakerHandle {
     }
 
     pub async fn update(&self) -> Result<()> {
+        self.refresh_ext_addrs_if_stale().await;
         let now = Instant::now();
         let outcome = {
             let mut guard = self.inner.lock().await;
@@ -1933,6 +2279,18 @@ impl RatioFakerHandle {
                 guard.stats.seeders = response.complete;
                 guard.stats.leechers = response.incomplete;
                 guard.stats.announce_count += 1;
+                guard.last_peers = response.peers.clone();
+                log_debug!(
+                    "Swarm peers from announce: {} peers [{}]",
+                    response.peers.len(),
+                    response
+                        .peers
+                        .iter()
+                        .take(8)
+                        .map(|a| a.to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
             }
         }
 
@@ -1956,6 +2314,134 @@ impl RatioFakerHandle {
             guard.apply_periodic_announce_result(result);
         }
 
+        // Swarm observer v1: sample peer completion when downloading
+        // (completion < 100% with download running) in a lone-seeder
+        // swarm (seed fraction BELOW threshold). Evaluated every update, never latched.
+        let sample_params = {
+            let mut guard = self.inner.lock().await;
+            let due = guard
+                .last_swarm_sample
+                .map(|t| t.elapsed() >= guard.swarm_config.resample_interval)
+                .unwrap_or(true);
+            let below_100 = guard.stats.torrent_completion < 100.0;
+            let downloading = guard.stats.download_intent > 0.0;
+            let have_peers = !guard.last_peers.is_empty();
+            let frac =
+                crate::swarm_sample::seed_fraction(guard.stats.seeders, guard.stats.leechers);
+            let gate_active = crate::swarm_sample::pacing_gate_active(
+                guard.stats.torrent_completion,
+                guard.stats.download_intent,
+                guard.stats.seeders,
+                guard.stats.leechers,
+                guard.swarm_config.phase_min_seed_fraction,
+            );
+            let active = due && below_100 && downloading && gate_active && have_peers;
+            // Gate evaluation log, rate-limited to 1/min to avoid spam.
+            let gate_log_due =
+                guard.last_gate_log.map(|t| t.elapsed() >= Duration::from_secs(60)).unwrap_or(true);
+            // Log flips immediately: the steady-state cap hides transitions.
+            let flipped = guard.last_gate_active != Some(active);
+            guard.last_gate_active = Some(active);
+            if gate_log_due || flipped {
+                guard.last_gate_log = Some(Instant::now());
+                log_debug!(
+                    "Swarm gate: active={} due={} completion={:.1}<100={} dl_rate={:.0}>0={} seed_frac={:.2}<threshold={:.2} peers={} have={}",
+                    active,
+                    due,
+                    guard.stats.torrent_completion,
+                    below_100,
+                    guard.stats.download_intent,
+                    downloading,
+                    frac,
+                    guard.swarm_config.phase_min_seed_fraction,
+                    guard.last_peers.len(),
+                    have_peers
+                );
+            }
+            if active {
+                // Stamp at spawn, not completion: sampling takes seconds and
+                // the update tick runs every few seconds, so stamping on
+                // completion allowed a duplicate overlapping cycle.
+                guard.last_swarm_sample = Some(Instant::now());
+                // Rotate through the peer list so cycles dial fresh addresses
+                // instead of the same unreachable head of the list.
+                let peers = crate::swarm_sample::rotate_take(
+                    &guard.last_peers,
+                    guard.sample_offset,
+                    guard.swarm_config.max_peers,
+                );
+                guard.sample_offset =
+                    guard.sample_offset.wrapping_add(guard.swarm_config.max_peers);
+                let info_hash = guard.torrent.info_hash;
+                let peer_id = peer_id_to_array(&guard.peer_id).ok();
+                let total_pieces = guard.torrent.num_pieces as u64;
+                let config = guard.swarm_config.clone();
+                peer_id.map(|pid| (peers, info_hash, pid, total_pieces, config))
+            } else {
+                None
+            }
+        };
+        if let Some((peers, info_hash, peer_id, total_pieces, config)) = sample_params {
+            let inner = Arc::clone(&self.inner);
+            let total = peers.len();
+            log_info!("Swarm sampling started: dialing {} peers", total);
+            log_debug!(
+                "Swarm sampling peers: {}",
+                peers.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(",")
+            );
+            tokio::spawn(async move {
+                let samples = crate::swarm_sample::sample_swarm(
+                    &peers,
+                    info_hash,
+                    peer_id,
+                    total_pieces,
+                    config.clone(),
+                )
+                .await;
+                log_info!("Swarm sample complete: {} of {} peers responded", samples.len(), total);
+                let mut guard = inner.lock().await;
+                if !samples.is_empty() {
+                    let at = samples.iter().map(|s| s.sampled_at_unix).max();
+                    let consensus = crate::swarm_sample::trimmed_median(&samples, &config);
+                    if let (Some(t), Some(c)) = (at, consensus) {
+                        if let Some((prev_t, prev_c)) = guard.consensus_history.last().copied() {
+                            let dt = t.saturating_sub(prev_t) as f64;
+                            if dt > 0.0 {
+                                let v = (c - prev_c) / dt;
+                                guard.swarm_velocity = config.velocity_alpha * v.max(0.0)
+                                    + (1.0 - config.velocity_alpha) * guard.swarm_velocity;
+                            }
+                        }
+                        guard.consensus_history.push((t, c));
+                        while guard.consensus_history.len() > config.history_len {
+                            guard.consensus_history.remove(0);
+                        }
+                        log_debug!(
+                            "Swarm consensus: {:.1}% ({} peers, velocity {:+.4}%/s)",
+                            c,
+                            samples.len(),
+                            guard.swarm_velocity
+                        );
+                    }
+                    guard.swarm_snapshot = SwarmSnapshot {
+                        sampled_at_unix: at,
+                        peers: samples,
+                        consensus_percent: consensus,
+                        our_completion_percent: None,
+                        paced: false,
+                        age_secs: None,
+                        stale: false,
+                        velocity_pct_per_s: None,
+                        gate_active: false,
+                        gate_reason: String::new(),
+                    };
+                    log_debug!("Swarm snapshot stored");
+                } else {
+                    log_debug!("Swarm sample: no responses, keeping previous snapshot");
+                }
+            });
+        }
+
         if outcome.stop {
             self.apply_post_stop_action().await?;
         }
@@ -1966,6 +2452,7 @@ impl RatioFakerHandle {
     }
 
     pub async fn update_stats_only(&self) -> Result<()> {
+        self.refresh_ext_addrs_if_stale().await;
         let now = Instant::now();
         let outcome = {
             let mut guard = self.inner.lock().await;
@@ -1986,6 +2473,18 @@ impl RatioFakerHandle {
                 guard.stats.seeders = response.complete;
                 guard.stats.leechers = response.incomplete;
                 guard.stats.announce_count += 1;
+                guard.last_peers = response.peers.clone();
+                log_debug!(
+                    "Swarm peers from announce: {} peers [{}]",
+                    response.peers.len(),
+                    response
+                        .peers
+                        .iter()
+                        .take(8)
+                        .map(|a| a.to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
             }
         }
 
@@ -2086,6 +2585,22 @@ mod tests {
         assert_eq!(config.upload_rate, 50.0);
         assert_eq!(config.download_rate, 100.0);
         assert!(!config.vpn_port_sync);
+    }
+
+    #[test]
+    fn swarm_config_follows_faker_config() {
+        let mut cfg = FakerConfig::default();
+        cfg.swarm_max_peers = 5;
+        cfg.swarm_resample_interval_secs = 60;
+        cfg.swarm_epsilon_min_percent = 2.0;
+        cfg.swarm_phase_min_ours_percent = 80.0;
+        cfg.swarm_phase_min_seed_fraction = 0.5;
+        let sc = RatioFaker::swarm_config_from(&cfg);
+        assert_eq!(sc.max_peers, 5);
+        assert_eq!(sc.resample_interval, Duration::from_secs(60));
+        assert_eq!(sc.epsilon_min_percent, 2.0);
+        assert_eq!(sc.phase_min_ours_percent, 80.0);
+        assert_eq!(sc.phase_min_seed_fraction, 0.5);
     }
 
     fn resume_test_faker(ratio: f64, target: f64) -> RatioFaker {
@@ -2259,6 +2774,123 @@ mod tests {
         assert_eq!(download, 50.0);
         assert!(!is_idling);
         assert!(reason.is_none());
+    }
+
+    #[test]
+    #[test]
+    fn pacing_holds_across_consecutive_ticks() {
+        // Regression: gating on the actuated download rate released the
+        // throttle every other tick (engage/release limit cycle on the
+        // 5s tick). Gates read pre-pace intent now, so pacing must hold.
+        // Seed fraction ~9% (1 seeder, 10 leechers) < 70% threshold -> pacing engages.
+        let torrent = Arc::new(TorrentInfo {
+            info_hash: [15u8; 20],
+            announce: "https://tracker.test/announce".to_string(),
+            announce_list: None,
+            name: "paced".to_string(),
+            total_size: 1024 * 1000,
+            piece_length: 1024,
+            num_pieces: 1000,
+            creation_date: None,
+            comment: None,
+            created_by: None,
+            is_single_file: true,
+            file_count: 1,
+            files: Vec::new(),
+        });
+        let mut faker =
+            RatioFaker::new(torrent, FakerConfig::default(), None).expect("faker builds");
+        faker.stats.state = FakerState::Running;
+        faker.stats.torrent_completion = 22.0;
+        faker.stats.left = 700_000;
+        faker.stats.current_download_rate = 100.0;
+        faker.stats.seeders = 1;
+        faker.stats.leechers = 10;
+        let now = crate::swarm_sample::now_unix();
+        let peer = |percent: f64| crate::swarm_sample::PeerSample {
+            addr: "1.1.1.1:6881".to_string(),
+            peer_id_hex: None,
+            percent,
+            sampled_at_unix: now,
+        };
+        faker.swarm_snapshot = crate::swarm_sample::SwarmSnapshot {
+            sampled_at_unix: Some(now),
+            peers: vec![peer(4.4), peer(4.5), peer(4.6)],
+            consensus_percent: Some(4.5),
+            our_completion_percent: None,
+            paced: false,
+            age_secs: None,
+            stale: false,
+            velocity_pct_per_s: None,
+            gate_active: false,
+            gate_reason: String::new(),
+        };
+        faker.consensus_history = vec![(now, 4.5)];
+        faker.swarm_velocity = 0.0;
+        faker.config.swarm_pacing_enabled = true;
+
+        faker.tick(Instant::now());
+        assert!(faker.stats.is_paced, "first tick must engage pacing");
+        assert_eq!(faker.stats.current_download_rate, 0.0);
+        faker.tick(Instant::now());
+        assert!(faker.stats.is_paced, "second tick must HOLD pacing (no engage/release flap)");
+        assert_eq!(faker.stats.current_download_rate, 0.0);
+    }
+
+    #[test]
+    fn pacing_works_with_thin_sample_and_fresh_history() {
+        // Live case: 2 of 50 answer, consensus known and tracked, ours 1.6
+        // ahead. Gating on snapshot size fail-opened; history gating paces.
+        // Seed fraction ~9% (1 seeder, 10 leechers) < 70% threshold -> pacing engages.
+        let torrent = Arc::new(TorrentInfo {
+            info_hash: [16u8; 20],
+            announce: "https://tracker.test/announce".to_string(),
+            announce_list: None,
+            name: "thin".to_string(),
+            total_size: 1024 * 1000,
+            piece_length: 1024,
+            num_pieces: 1000,
+            creation_date: None,
+            comment: None,
+            created_by: None,
+            is_single_file: true,
+            file_count: 1,
+            files: Vec::new(),
+        });
+        let mut faker =
+            RatioFaker::new(torrent, FakerConfig::default(), None).expect("faker builds");
+        faker.stats.state = FakerState::Running;
+        faker.stats.torrent_completion = 40.0;
+        faker.stats.left = 600_000;
+        faker.stats.current_download_rate = 100.0;
+        faker.stats.seeders = 1;
+        faker.stats.leechers = 10;
+        let now = crate::swarm_sample::now_unix();
+        let peer = |percent: f64| crate::swarm_sample::PeerSample {
+            addr: "1.1.1.1:6881".to_string(),
+            peer_id_hex: None,
+            percent,
+            sampled_at_unix: now,
+        };
+        faker.swarm_snapshot = crate::swarm_sample::SwarmSnapshot {
+            sampled_at_unix: Some(now),
+            peers: vec![peer(38.3), peer(38.5)],
+            consensus_percent: Some(38.4),
+            our_completion_percent: None,
+            paced: false,
+            age_secs: None,
+            stale: false,
+            velocity_pct_per_s: None,
+            gate_active: false,
+            gate_reason: String::new(),
+        };
+        faker.consensus_history = vec![(now, 38.4)];
+        faker.swarm_velocity = 0.0;
+        faker.config.swarm_pacing_enabled = true;
+
+        faker.tick(Instant::now());
+        assert!(faker.stats.is_paced, "thin but tracked sample must pace");
+        assert_eq!(faker.stats.current_download_rate, 0.0);
     }
 
     #[test]
@@ -2712,6 +3344,7 @@ mod tests {
             complete: 12,
             incomplete: 4,
             warning: None,
+            peers: Vec::new(),
         }));
 
         assert!(matches!(faker.stats.state, FakerState::Running));

@@ -137,6 +137,8 @@
   let networkStatus = $state(null);
   let networkStatusLoading = $state(false);
   let networkStatusError = $state(null);
+  // Swarm consensus from backend (server mode only)
+  let swarmConsensus = $state(null);
   // Debounce timer for syncing config to server
   let configSyncTimeout = null;
 
@@ -984,6 +986,19 @@
 
             instanceActions.updateInstance(instanceId, updates);
 
+            // Swarm snapshot rides the live-stats tick (server mode, fail silent)
+            if (isServer) {
+              try {
+                const swarm = await api.getSwarm(instanceId);
+                swarmConsensus =
+                  swarm && !swarm.stale && typeof swarm.consensus_percent === 'number'
+                    ? swarm.consensus_percent
+                    : null;
+              } catch {
+                swarmConsensus = null;
+              }
+            }
+
             if (await handlePostStopDelete(instanceId, stats)) {
               return;
             }
@@ -1036,6 +1051,7 @@
       activeLiveStatsIntervalId = null;
     }
     activeLiveStatsInstanceId = null;
+    swarmConsensus = null;
   }
 
   // Start tracker announce polling for an instance (created for ALL running instances)
@@ -1483,7 +1499,7 @@
           let statusMessage, statusType, statusIcon;
           if (instance.isPaused) {
             ({ statusMessage, statusType, statusIcon } = getPausedStatus());
-          } else if (instance.stats?.is_idling) {
+          } else if (instance.stats?.is_idling || instance.stats?.is_paced) {
             const statusFromStats = getStatusFromStats(instance.stats);
             statusMessage = statusFromStats.statusMessage;
             statusType = statusFromStats.statusType;
@@ -1685,6 +1701,12 @@
                   targetUploadRate={$activeInstance.targetUploadRate}
                   targetDownloadRate={$activeInstance.targetDownloadRate}
                   progressiveDurationHours={$activeInstance.progressiveDurationHours}
+                  swarmPacingEnabled={$activeInstance.swarmPacingEnabled}
+                  swarmMaxPeers={$activeInstance.swarmMaxPeers}
+                  swarmResampleIntervalSecs={$activeInstance.swarmResampleIntervalSecs}
+                  swarmEpsilonMinPercent={$activeInstance.swarmEpsilonMinPercent}
+                  swarmPhaseMinOursPercent={$activeInstance.swarmPhaseMinOursPercent}
+                  swarmPhaseMinSeedFraction={$activeInstance.swarmPhaseMinSeedFraction}
                   isRunning={$activeInstance.isRunning || false}
                   onUpdate={updates => {
                     // Reset cumulative stats if user changes initial values
@@ -1777,6 +1799,7 @@
                     stopAtSeedTimeHours={$activeInstance.stopAtSeedTimeHours}
                     {formatBytes}
                     {formatDuration}
+                    {swarmConsensus}
                   />
                 {/if}
               </div>

@@ -38,6 +38,7 @@
     Monitor,
     ZoomIn,
     ZoomOut,
+    Network,
   } from '@lucide/svelte';
   import PresetIcon from '../config/PresetIcon.svelte';
 
@@ -799,7 +800,8 @@
                       >↑ {preset.settings.uploadRate} KB/s</span
                     >
                     <span class="px-2 py-1 bg-muted rounded"
-                      >↓ {preset.settings.downloadRate} KB/s</span
+                      >↓ {preset.settings.downloadRate} KB/s{#if preset.settings.swarmPacingEnabled}
+                        <Network size={12} class="inline-block align-[-2px]" />{/if}</span
                     >
                     {#if preset.settings.randomizeRates}
                       <span class="px-2 py-1 bg-muted rounded"
@@ -941,7 +943,8 @@
                         >↑ {preset.settings.uploadRate} KB/s</span
                       >
                       <span class="px-2 py-1 bg-muted rounded"
-                        >↓ {preset.settings.downloadRate} KB/s</span
+                        >↓ {preset.settings.downloadRate} KB/s{#if preset.settings.swarmPacingEnabled}
+                        <Network size={12} class="inline-block align-[-2px]" />{/if}</span
                       >
                       {#if preset.settings.randomizeRates}
                         <span class="px-2 py-1 bg-muted rounded"

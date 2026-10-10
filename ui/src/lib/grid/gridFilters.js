@@ -69,7 +69,7 @@ export function buildStateFilterEntries(instances) {
     counts.set(state, (counts.get(state) || 0) + 1);
   }
 
-  const order = ['running', 'paused', 'idle', 'starting', 'stopping', 'stopped'];
+  const order = ['running', 'paced', 'paused', 'idle', 'starting', 'stopping', 'stopped'];
 
   return order
     .filter(state => counts.has(state))

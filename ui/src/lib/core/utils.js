@@ -120,6 +120,25 @@ export function serializeSessionInstances(instances) {
     idle_when_no_seeders: inst.idleWhenNoSeeders,
     min_leechers: parseInt(inst.minLeechers ?? 0),
     max_seeder_leecher_ratio: inst.maxSeederLeecherRatio != null && inst.maxSeederLeecherRatio !== '' ? parseFloat(inst.maxSeederLeecherRatio) : null,
+    // Swarm knobs: unset fields are omitted so backend defaults apply.
+    ...(inst.swarmPacingEnabled != null
+      ? { swarm_pacing_enabled: inst.swarmPacingEnabled }
+      : {}),
+    ...(inst.swarmMaxPeers != null && inst.swarmMaxPeers !== ''
+      ? { swarm_max_peers: parseInt(inst.swarmMaxPeers) }
+      : {}),
+    ...(inst.swarmResampleIntervalSecs != null && inst.swarmResampleIntervalSecs !== ''
+      ? { swarm_resample_interval_secs: parseInt(inst.swarmResampleIntervalSecs) }
+      : {}),
+    ...(inst.swarmEpsilonMinPercent != null && inst.swarmEpsilonMinPercent !== ''
+      ? { swarm_epsilon_min_percent: parseFloat(inst.swarmEpsilonMinPercent) }
+      : {}),
+    ...(inst.swarmPhaseMinOursPercent != null && inst.swarmPhaseMinOursPercent !== ''
+      ? { swarm_phase_min_ours_percent: parseFloat(inst.swarmPhaseMinOursPercent) }
+      : {}),
+    ...(inst.swarmPhaseMinSeedFraction != null && inst.swarmPhaseMinSeedFraction !== ''
+      ? { swarm_phase_min_seed_fraction: parseFloat(inst.swarmPhaseMinSeedFraction) }
+      : {}),
     post_stop_action: inst.postStopAction,
     progressive_rates_enabled: inst.progressiveRatesEnabled,
     target_upload_rate: parseFloat(inst.targetUploadRate),

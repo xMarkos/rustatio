@@ -679,6 +679,15 @@ impl AppState {
         Ok((*instance.torrent).clone())
     }
 
+    pub async fn get_swarm_snapshot(
+        &self,
+        id: &str,
+    ) -> Result<rustatio_core::swarm_sample::SwarmSnapshot, String> {
+        let instances = self.instances.read().await;
+        let instance = instances.get(id).ok_or("Instance not found")?;
+        Ok(instance.faker.swarm_snapshot().await)
+    }
+
     pub async fn get_instance_summary(&self, id: &str) -> Result<TorrentSummary, String> {
         let instances = self.instances.read().await;
         let instance = instances.get(id).ok_or("Instance not found")?;
@@ -1177,6 +1186,9 @@ impl AppState {
             state,
             is_idling: runtime.is_idling,
             idling_reason: runtime.idling_reason.clone(),
+            is_paced: false,
+            pacing_reason: None,
+            download_intent: 0.0,
             tracker_error: runtime.tracker_error.clone(),
             tracker_retry_attempt: 0,
             tracker_retry_at_ms: None,

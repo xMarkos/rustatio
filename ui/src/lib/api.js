@@ -522,6 +522,9 @@ const serverApi = {
   getStats: async id => {
     return serverFetch(`/faker/${id}/stats`, { method: 'GET' });
   },
+  getSwarm: async id => {
+    return serverFetch(`/instances/${id}/swarm`, { method: 'GET' });
+  },
   scrapeTracker: async _id => {
     emitLog('warn', 'scrapeTracker not implemented in server mode');
     return null;

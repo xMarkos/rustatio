@@ -16,11 +16,16 @@
     stopAtSeedTimeHours,
     formatBytes,
     formatDuration,
+    swarmConsensus = null,
   } = $props();
 
   const isLeeching = $derived(completionPercent < 100);
   const torrentCompletion = $derived(stats?.torrent_completion ?? completionPercent);
   const torrentDownloaded = $derived(torrentSize > 0 ? torrentSize - (stats?.left ?? 0) : 0);
+  const showSwarmBand = $derived(
+    isLeeching && typeof swarmConsensus === 'number' && Number.isFinite(swarmConsensus)
+  );
+  const swarmPct = $derived(showSwarmBand ? Math.min(100, Math.max(0, swarmConsensus)) : 0);
 </script>
 
 <Card>
@@ -49,9 +54,16 @@
           {/if}
         </div>
         <div class="flex items-center gap-2">
-          <div class="h-1.5 min-w-0 flex-1 bg-muted">
+          <div class="relative h-1.5 min-w-0 flex-1 bg-muted">
+            {#if showSwarmBand}
+              <div
+                class="absolute inset-y-0 left-0 bg-muted-foreground/30 transition-[width] duration-300"
+                style="width: {swarmPct}%"
+                title="Swarm consensus {swarmPct.toFixed(1)}%"
+              ></div>
+            {/if}
             <div
-              class="h-full bg-stat-leecher transition-[width] duration-300"
+              class="relative h-full bg-stat-leecher transition-[width] duration-300"
               style="width: {torrentCompletion}%"
             ></div>
           </div>
@@ -59,6 +71,17 @@
             >{torrentCompletion.toFixed(0)}%</span
           >
         </div>
+        {#if showSwarmBand}
+          <div
+            class="mt-1 flex items-center gap-1.5"
+            title="Swarm consensus {swarmPct.toFixed(1)}%"
+          >
+            <span class="h-1.5 w-3 shrink-0 bg-muted-foreground/40" aria-hidden="true"></span>
+            <span class="text-[0.625rem] text-muted-foreground"
+              >Swarm consensus {swarmPct.toFixed(0)}%</span
+            >
+          </div>
+        {/if}
         {#if torrentCompletion >= 100}
           <p class="mt-1 text-[0.625rem] text-stat-upload">Download complete — now seeding</p>
         {/if}
