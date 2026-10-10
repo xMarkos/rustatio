@@ -18,6 +18,7 @@ use crate::services::watch::WatchService;
 pub struct ServerState {
     pub app: AppState,
     pub watch: Arc<RwLock<WatchService>>,
+    pub shutdown: tokio::sync::watch::Sender<bool>,
 }
 
 struct SecurityAddon;

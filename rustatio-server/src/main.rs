@@ -127,7 +127,14 @@ async fn main() {
     }
     let watch_service = Arc::new(RwLock::new(watch_service));
 
-    let server_state = ServerState { app: state.clone(), watch: Arc::clone(&watch_service) };
+    let (event_shutdown_tx, _) = tokio::sync::watch::channel(false);
+    let (force_tx, force_rx) = oneshot::channel::<()>();
+
+    let server_state = ServerState {
+        app: state.clone(),
+        watch: Arc::clone(&watch_service),
+        shutdown: event_shutdown_tx.clone(),
+    };
 
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8080);
     let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any);
@@ -170,6 +177,11 @@ async fn main() {
     tokio::spawn(async move {
         shutdown_signal().await;
 
+        // Close SSE/event streams first so the axum graceful shutdown below
+        // can complete once the remaining services stop.
+        let _ = event_shutdown_tx.send(true);
+        tracing::info!("Shutdown signal received, closing event streams...");
+
         tracing::info!("Stopping scheduler...");
         scheduler_for_shutdown.lock().await.shutdown().await;
 
@@ -193,15 +205,27 @@ async fn main() {
         }
 
         let _ = shutdown_tx.send(());
+
+        // Backstop timer for the graceful axum shutdown below.
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            let _ = force_tx.send(());
+        });
     });
 
     let listener = tokio::net::TcpListener::bind(addr).await.expect("failed to bind TCP listener");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = shutdown_rx.await;
-        })
-        .await
-        .expect("server error");
+    let server = axum::serve(listener, app).with_graceful_shutdown(async {
+        let _ = shutdown_rx.await;
+    });
+
+    tokio::select! {
+        res = server => {
+            res.expect("server error");
+        }
+        _ = force_rx => {
+            tracing::warn!("Graceful shutdown timed out; exiting with connections dropped");
+        }
+    }
 
     tracing::info!("Server shutdown complete");
 }

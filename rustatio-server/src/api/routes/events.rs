@@ -41,6 +41,7 @@ pub async fn logs_sse(
     State(state): State<ServerState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = state.app.subscribe_logs();
+    let mut shutdown_rx = state.shutdown.subscribe();
 
     let stream = BroadcastStream::new(rx).filter_map(|result| {
         result.ok().map(|log_event| {
@@ -51,7 +52,11 @@ pub async fn logs_sse(
         })
     });
 
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    let closing = async move {
+        let _ = shutdown_rx.wait_for(|stop| *stop).await;
+    };
+
+    Sse::new(futures::StreamExt::take_until(stream, closing)).keep_alive(KeepAlive::default())
 }
 
 #[utoipa::path(
@@ -70,6 +75,7 @@ pub async fn instances_sse(
     State(state): State<ServerState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = state.app.subscribe_instance_events();
+    let mut shutdown_rx = state.shutdown.subscribe();
 
     // Send a full snapshot on connect so clients start consistent before live updates arrive.
     let summaries = state.app.list_instance_summaries().await;
@@ -81,7 +87,12 @@ pub async fn instances_sse(
     let live = BroadcastStream::new(rx)
         .filter_map(|result| result.ok().map(|event| Ok(to_sse_event(&event))));
 
-    Sse::new(initial.chain(live)).keep_alive(KeepAlive::default())
+    let closing = async move {
+        let _ = shutdown_rx.wait_for(|stop| *stop).await;
+    };
+
+    Sse::new(futures::StreamExt::take_until(initial.chain(live), closing))
+        .keep_alive(KeepAlive::default())
 }
 
 pub fn router() -> Router<ServerState> {
