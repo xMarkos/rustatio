@@ -970,14 +970,15 @@ impl RatioFaker {
         // Reads download_intent, NOT current_download_rate: the latter is the
         // post-pace actuated value, and gating on it releases the throttle on
         // the very next tick (engage/release limit cycle).
-        // Activation gate: seed fraction >= configured threshold (phase_min_seed_fraction).
+        // Activation gate: seed fraction BELOW configured threshold (lone-seeder swarms).
         // Escape hatch (phase_finish) is handled inside pace_decision.
-        let total = self.stats.seeders + self.stats.leechers;
-        let seed_fraction = if total > 0 { self.stats.seeders as f64 / total as f64 } else { 0.0 };
-        if !(self.stats.torrent_completion < 100.0
-            && self.stats.download_intent > 0.0
-            && seed_fraction >= self.swarm_config.phase_min_seed_fraction)
-        {
+        if !crate::swarm_sample::pacing_gate_active(
+            self.stats.torrent_completion,
+            self.stats.download_intent,
+            self.stats.seeders,
+            self.stats.leechers,
+            self.swarm_config.phase_min_seed_fraction,
+        ) {
             return (download_rate, None);
         }
         let cfg = &self.swarm_config;
@@ -1048,7 +1049,8 @@ impl RatioFaker {
     /// the swarm is empty (hatch stays shut).
     fn seed_fraction(&self) -> Option<f64> {
         let total = self.stats.seeders + self.stats.leechers;
-        (total > 0).then(|| self.stats.seeders as f64 / total as f64)
+        (total > 0)
+            .then(|| crate::swarm_sample::seed_fraction(self.stats.seeders, self.stats.leechers))
     }
 
     fn apply_start_result(&mut self, result: Result<AnnounceResponse>) {
@@ -2313,8 +2315,8 @@ impl RatioFakerHandle {
         }
 
         // Swarm observer v1: sample peer completion when downloading
-        // (completion < 100% with download running) in a seed-heavy
-        // swarm. Evaluated every update, never latched.
+        // (completion < 100% with download running) in a lone-seeder
+        // swarm (seed fraction BELOW threshold). Evaluated every update, never latched.
         let sample_params = {
             let mut guard = self.inner.lock().await;
             let due = guard
@@ -2323,12 +2325,17 @@ impl RatioFakerHandle {
                 .unwrap_or(true);
             let below_100 = guard.stats.torrent_completion < 100.0;
             let downloading = guard.stats.download_intent > 0.0;
-            let total = guard.stats.seeders + guard.stats.leechers;
-            let seed_fraction =
-                if total > 0 { guard.stats.seeders as f64 / total as f64 } else { 0.0 };
-            let seed_heavy = seed_fraction >= guard.swarm_config.phase_min_seed_fraction;
             let have_peers = !guard.last_peers.is_empty();
-            let active = due && below_100 && downloading && seed_heavy && have_peers;
+            let frac =
+                crate::swarm_sample::seed_fraction(guard.stats.seeders, guard.stats.leechers);
+            let gate_active = crate::swarm_sample::pacing_gate_active(
+                guard.stats.torrent_completion,
+                guard.stats.download_intent,
+                guard.stats.seeders,
+                guard.stats.leechers,
+                guard.swarm_config.phase_min_seed_fraction,
+            );
+            let active = due && below_100 && downloading && gate_active && have_peers;
             // Gate evaluation log, rate-limited to 1/min to avoid spam.
             let gate_log_due =
                 guard.last_gate_log.map(|t| t.elapsed() >= Duration::from_secs(60)).unwrap_or(true);
@@ -2338,14 +2345,14 @@ impl RatioFakerHandle {
             if gate_log_due || flipped {
                 guard.last_gate_log = Some(Instant::now());
                 log_debug!(
-                    "Swarm gate: active={} due={} completion={:.1}<100={} dl_rate={:.0}>0={} seed_frac={:.2}>=threshold={:.2} peers={} have={}",
+                    "Swarm gate: active={} due={} completion={:.1}<100={} dl_rate={:.0}>0={} seed_frac={:.2}<threshold={:.2} peers={} have={}",
                     active,
                     due,
                     guard.stats.torrent_completion,
                     below_100,
                     guard.stats.download_intent,
                     downloading,
-                    seed_fraction,
+                    frac,
                     guard.swarm_config.phase_min_seed_fraction,
                     guard.last_peers.len(),
                     have_peers
@@ -2770,10 +2777,12 @@ mod tests {
     }
 
     #[test]
+    #[test]
     fn pacing_holds_across_consecutive_ticks() {
         // Regression: gating on the actuated download rate released the
         // throttle every other tick (engage/release limit cycle on the
         // 5s tick). Gates read pre-pace intent now, so pacing must hold.
+        // Seed fraction ~9% (1 seeder, 10 leechers) < 70% threshold -> pacing engages.
         let torrent = Arc::new(TorrentInfo {
             info_hash: [15u8; 20],
             announce: "https://tracker.test/announce".to_string(),
@@ -2795,8 +2804,8 @@ mod tests {
         faker.stats.torrent_completion = 22.0;
         faker.stats.left = 700_000;
         faker.stats.current_download_rate = 100.0;
-        faker.stats.seeders = 8;
-        faker.stats.leechers = 2;
+        faker.stats.seeders = 1;
+        faker.stats.leechers = 10;
         let now = crate::swarm_sample::now_unix();
         let peer = |percent: f64| crate::swarm_sample::PeerSample {
             addr: "1.1.1.1:6881".to_string(),
@@ -2832,6 +2841,7 @@ mod tests {
     fn pacing_works_with_thin_sample_and_fresh_history() {
         // Live case: 2 of 50 answer, consensus known and tracked, ours 1.6
         // ahead. Gating on snapshot size fail-opened; history gating paces.
+        // Seed fraction ~9% (1 seeder, 10 leechers) < 70% threshold -> pacing engages.
         let torrent = Arc::new(TorrentInfo {
             info_hash: [16u8; 20],
             announce: "https://tracker.test/announce".to_string(),
@@ -2853,8 +2863,8 @@ mod tests {
         faker.stats.torrent_completion = 40.0;
         faker.stats.left = 600_000;
         faker.stats.current_download_rate = 100.0;
-        faker.stats.seeders = 8;
-        faker.stats.leechers = 2;
+        faker.stats.seeders = 1;
+        faker.stats.leechers = 10;
         let now = crate::swarm_sample::now_unix();
         let peer = |percent: f64| crate::swarm_sample::PeerSample {
             addr: "1.1.1.1:6881".to_string(),

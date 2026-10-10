@@ -120,6 +120,31 @@ pub fn rotate_take(peers: &[SocketAddr], offset: usize, n: usize) -> Vec<SocketA
     peers.iter().cycle().skip(offset % peers.len()).take(n).copied().collect()
 }
 
+/// Compute seed fraction: seeders / (seeders + leechers). Returns 0.0 when total is 0.
+pub fn seed_fraction(seeders: i64, leechers: i64) -> f64 {
+    let total = seeders + leechers;
+    if total > 0 {
+        seeders as f64 / total as f64
+    } else {
+        0.0
+    }
+}
+
+/// Pacing activation gate: engages when completion < 100%, download_intent > 0,
+/// AND seed fraction is BELOW the threshold (lone-seeder swarms).
+/// The completion-phase escape hatch (phase_finish) is handled separately in pace_decision.
+pub fn pacing_gate_active(
+    completion: f64,
+    download_intent: f64,
+    seeders: i64,
+    leechers: i64,
+    min_seed_fraction: f64,
+) -> bool {
+    completion < 100.0
+        && download_intent > 0.0
+        && seed_fraction(seeders, leechers) < min_seed_fraction
+}
+
 /// Human-readable gate state for the API: the first unsatisfied gate
 /// condition wins, so `paced=false` is never ambiguous about *why* the
 /// mechanism is off. Pure for unit tests.
@@ -135,20 +160,16 @@ pub fn describe_gate(
     pacing_reason: Option<&str>,
     min_seed_fraction: f64,
 ) -> (bool, String) {
-    let total = seeders + leechers;
-    let seed_fraction = if total > 0 { seeders as f64 / total as f64 } else { 0.0 };
+    let frac = seed_fraction(seeders, leechers);
     if completion >= 100.0 {
         (false, "complete".to_string())
     } else if download_intent <= 0.0 {
         (false, "not downloading".to_string())
-    } else if seed_fraction < min_seed_fraction {
+    } else if !pacing_gate_active(completion, download_intent, seeders, leechers, min_seed_fraction)
+    {
         (
             false,
-            format!(
-                "seed fraction {:.0}% (need ≥{:.0}%)",
-                seed_fraction * 100.0,
-                min_seed_fraction * 100.0
-            ),
+            format!("seed fraction {:.0}% (need <{:.0}%)", frac * 100.0, min_seed_fraction * 100.0),
         )
     } else if !has_peers {
         (false, "no peers from tracker yet".to_string())
@@ -450,27 +471,27 @@ mod tests {
             describe_gate(20.0, 0.0, 1, 1, true, false, false, None, 0.7).1,
             "not downloading"
         );
-        // 3 seeders, 7 leechers = 30% seed fraction < 70% threshold
+        // 3 seeders, 7 leechers = 30% seed fraction < 70% threshold -> passes fraction check, fails on peers
         assert_eq!(
-            describe_gate(20.0, 5.0, 3, 7, true, false, false, None, 0.7).1,
-            "seed fraction 30% (need ≥70%)"
-        );
-        // 7 seeders, 3 leechers = 70% seed fraction >= 70% threshold -> passes seed fraction check
-        assert_eq!(
-            describe_gate(20.0, 5.0, 7, 3, false, false, false, None, 0.7).1,
+            describe_gate(20.0, 5.0, 3, 7, false, false, false, None, 0.7).1,
             "no peers from tracker yet"
         );
-        // 10 seeders, 0 leechers = 100% seed fraction >= 70% threshold
+        // 9 seeders, 1 leecher = 90% seed fraction >= 70% threshold -> fails fraction check
+        assert_eq!(
+            describe_gate(20.0, 5.0, 9, 1, true, false, false, None, 0.7).1,
+            "seed fraction 90% (need <70%)"
+        );
+        // 10 seeders, 0 leechers = 100% seed fraction >= 70% threshold -> fails fraction check
         assert_eq!(
             describe_gate(20.0, 5.0, 10, 0, true, true, false, None, 0.7).1,
-            "no fresh swarm sample"
+            "seed fraction 100% (need <70%)"
         );
         // Active reveals pacing mode, not just a boolean.
         let (on, why) = describe_gate(
             20.0,
             5.0,
-            10,
-            0,
+            1,
+            9,
             true,
             false,
             true,
@@ -479,7 +500,7 @@ mod tests {
         );
         assert!(on);
         assert!(why.contains("matching"));
-        let (on, why) = describe_gate(20.0, 5.0, 10, 0, true, false, false, None, 0.7);
+        let (on, why) = describe_gate(20.0, 5.0, 1, 9, true, false, false, None, 0.7);
         assert!(on);
         assert_eq!(why, "tracking seed-heavy swarm");
     }
