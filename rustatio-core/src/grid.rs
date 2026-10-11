@@ -126,6 +126,10 @@ pub struct InstanceSummary {
     #[serde(default)]
     pub idling_reason: Option<String>,
     #[serde(default)]
+    pub is_paced: bool,
+    #[serde(default)]
+    pub pacing_reason: Option<String>,
+    #[serde(default)]
     pub stop_condition_met: bool,
     #[serde(default)]
     pub post_stop_action: PostStopAction,
@@ -232,6 +236,8 @@ mod tests {
             created_at: 0,
             is_idling: true,
             idling_reason: Some("no_leechers".to_string()),
+            is_paced: false,
+            pacing_reason: None,
             stop_condition_met: true,
             post_stop_action: PostStopAction::DeleteInstance,
             effective_stop_at_ratio: Some(2.5),
@@ -240,6 +246,8 @@ mod tests {
         let value = serde_json::to_value(&summary).unwrap_or(serde_json::Value::Null);
         assert_eq!(value["isIdling"], true);
         assert_eq!(value["idlingReason"], "no_leechers");
+        assert_eq!(value["isPaced"], false);
+        assert_eq!(value["pacingReason"], serde_json::Value::Null);
         assert_eq!(value["stopConditionMet"], true);
         assert_eq!(value["postStopAction"], "delete_instance");
         assert_eq!(value["effectiveStopAtRatio"], 2.5);

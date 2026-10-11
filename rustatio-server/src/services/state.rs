@@ -106,6 +106,8 @@ fn build_summary(id: &str, instance: &FakerInstance, stats: &FakerStats) -> Inst
         created_at: instance.created_at,
         is_idling: stats.is_idling,
         idling_reason: stats.idling_reason.clone(),
+        is_paced: stats.is_paced,
+        pacing_reason: stats.pacing_reason.clone(),
         stop_condition_met: stats.stop_condition_met,
         post_stop_action: stats.post_stop_action,
         effective_stop_at_ratio: stats.effective_stop_at_ratio,
