@@ -17,6 +17,7 @@
     formatBytes,
     formatDuration,
     swarmConsensus = null,
+    swarmProjected = null,
   } = $props();
 
   const isLeeching = $derived(completionPercent < 100);
@@ -26,6 +27,10 @@
     isLeeching && typeof swarmConsensus === 'number' && Number.isFinite(swarmConsensus)
   );
   const swarmPct = $derived(showSwarmBand ? Math.min(100, Math.max(0, swarmConsensus)) : 0);
+  const showEstimateBand = $derived(
+    isLeeching && typeof swarmProjected === 'number' && Number.isFinite(swarmProjected)
+  );
+  const estimatePct = $derived(showEstimateBand ? Math.min(100, Math.max(0, swarmProjected)) : 0);
 </script>
 
 <Card>
@@ -54,12 +59,19 @@
           {/if}
         </div>
         <div class="flex items-center gap-2">
-          <div class="relative h-1.5 min-w-0 flex-1 bg-muted">
+          <div class="relative h-1.5 min-w-0 flex-1 overflow-hidden bg-muted">
             {#if showSwarmBand}
               <div
                 class="absolute inset-y-0 left-0 bg-muted-foreground/30 transition-[width] duration-300"
                 style="width: {swarmPct}%"
                 title="Swarm consensus {swarmPct.toFixed(1)}%"
+              ></div>
+            {/if}
+            {#if showEstimateBand}
+              <div
+                class="absolute inset-y-0 left-0 border-r-2 border-stat-download bg-stat-download/30 transition-[width] duration-300"
+                style="width: {estimatePct}%"
+                title="Swarm estimate {estimatePct.toFixed(1)}%"
               ></div>
             {/if}
             <div
@@ -71,15 +83,33 @@
             >{torrentCompletion.toFixed(0)}%</span
           >
         </div>
-        {#if showSwarmBand}
-          <div
-            class="mt-1 flex items-center gap-1.5"
-            title="Swarm consensus {swarmPct.toFixed(1)}%"
-          >
-            <span class="h-1.5 w-3 shrink-0 bg-muted-foreground/40" aria-hidden="true"></span>
-            <span class="text-[0.625rem] text-muted-foreground"
-              >Swarm consensus {swarmPct.toFixed(0)}%</span
-            >
+        {#if showSwarmBand || showEstimateBand}
+          <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+            {#if showSwarmBand}
+              <span
+                class="flex items-center gap-1.5"
+                title="Swarm consensus {swarmPct.toFixed(1)}%"
+              >
+                <span class="h-1.5 w-3 shrink-0 bg-muted-foreground/40" aria-hidden="true"></span>
+                <span class="text-[0.625rem] text-muted-foreground"
+                  >Swarm consensus {swarmPct.toFixed(0)}%</span
+                >
+              </span>
+            {/if}
+            {#if showEstimateBand}
+              <span
+                class="flex items-center gap-1.5"
+                title="Swarm estimate {estimatePct.toFixed(1)}%"
+              >
+                <span
+                  class="h-1.5 w-3 shrink-0 border-r-2 border-stat-download bg-stat-download/30"
+                  aria-hidden="true"
+                ></span>
+                <span class="text-[0.625rem] text-muted-foreground"
+                  >Swarm estimate {estimatePct.toFixed(0)}%</span
+                >
+              </span>
+            {/if}
           </div>
         {/if}
         {#if torrentCompletion >= 100}

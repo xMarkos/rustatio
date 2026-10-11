@@ -87,6 +87,9 @@ pub struct SwarmSnapshot {
     /// Trimmed-median consensus % from the latest cycle, if any.
     #[serde(default)]
     pub consensus_percent: Option<f64>,
+    /// Consensus projected forward by velocity * age (None when no consensus).
+    #[serde(default)]
+    pub projected_percent: Option<f64>,
     /// Our completion % when the snapshot was last served.
     #[serde(default)]
     pub our_completion_percent: Option<f64>,

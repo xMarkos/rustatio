@@ -139,6 +139,7 @@
   let networkStatusError = $state(null);
   // Swarm consensus from backend (server mode only)
   let swarmConsensus = $state(null);
+  let swarmProjected = $state(null);
   // Debounce timer for syncing config to server
   let configSyncTimeout = null;
 
@@ -994,8 +995,13 @@
                   swarm && !swarm.stale && typeof swarm.consensus_percent === 'number'
                     ? swarm.consensus_percent
                     : null;
+                swarmProjected =
+                  swarm && !swarm.stale && typeof swarm.projected_percent === 'number'
+                    ? swarm.projected_percent
+                    : null;
               } catch {
                 swarmConsensus = null;
+                swarmProjected = null;
               }
             }
 
@@ -1052,6 +1058,7 @@
     }
     activeLiveStatsInstanceId = null;
     swarmConsensus = null;
+    swarmProjected = null;
   }
 
   // Start tracker announce polling for an instance (created for ALL running instances)
@@ -1800,6 +1807,7 @@
                     {formatBytes}
                     {formatDuration}
                     {swarmConsensus}
+                    swarmProjected={swarmProjected}
                   />
                 {/if}
               </div>

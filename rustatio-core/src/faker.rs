@@ -2119,6 +2119,17 @@ impl RatioFakerHandle {
         snap.velocity_pct_per_s = Some(guard.swarm_velocity);
         snap.gate_active = gate_active;
         snap.gate_reason = gate_reason;
+        // Projected completion: consensus + max(velocity, 0) * age_secs (same as pace_decision)
+        snap.projected_percent = match (snap.consensus_percent, snap.velocity_pct_per_s, age) {
+            (Some(consensus), Some(velocity), Some(age_secs)) if age_secs > 0 => {
+                Some(consensus + velocity.max(0.0) * age_secs as f64)
+            }
+            (Some(consensus), Some(velocity), _) => {
+                // age_secs is 0 or None, projection equals consensus
+                Some(consensus + velocity.max(0.0) * 0.0)
+            }
+            _ => None,
+        };
         snap
     }
 
@@ -2427,6 +2438,7 @@ impl RatioFakerHandle {
                         sampled_at_unix: at,
                         peers: samples,
                         consensus_percent: consensus,
+                        projected_percent: None,
                         our_completion_percent: None,
                         paced: false,
                         age_secs: None,
@@ -2817,6 +2829,7 @@ mod tests {
             sampled_at_unix: Some(now),
             peers: vec![peer(4.4), peer(4.5), peer(4.6)],
             consensus_percent: Some(4.5),
+            projected_percent: None,
             our_completion_percent: None,
             paced: false,
             age_secs: None,
@@ -2876,6 +2889,7 @@ mod tests {
             sampled_at_unix: Some(now),
             peers: vec![peer(38.3), peer(38.5)],
             consensus_percent: Some(38.4),
+            projected_percent: None,
             our_completion_percent: None,
             paced: false,
             age_secs: None,
