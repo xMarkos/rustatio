@@ -441,18 +441,24 @@ fn render_torrent_info(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
-    let (status_text, status_color) =
-        app.stats.as_ref().map_or(("○ Initializing", Color::Gray), |stats| match stats.state {
-            FakerState::Running => ("● Running", Color::Green),
-            FakerState::Starting => ("◌ Starting", Color::Yellow),
-            FakerState::Stopping => ("◼ Stopping", Color::Yellow),
-            FakerState::Paused => ("⏸ Paused", Color::Yellow),
-            FakerState::Stopped => ("■ Stopped", Color::Red),
-            FakerState::Idle => ("○ Idle", Color::Gray),
-        });
+    let stats = app.stats.as_ref();
+    let (status_text, status_color) = stats.map_or(("○ Initializing", Color::Gray), |stats| {
+        if stats.is_paced {
+            ("⏳ Pacing", Color::Blue)
+        } else {
+            match stats.state {
+                FakerState::Running => ("● Running", Color::Green),
+                FakerState::Starting => ("◌ Starting", Color::Yellow),
+                FakerState::Stopping => ("◼ Stopping", Color::Yellow),
+                FakerState::Paused => ("⏸ Paused", Color::Yellow),
+                FakerState::Stopped => ("■ Stopped", Color::Red),
+                FakerState::Idle => ("○ Idle", Color::Gray),
+            }
+        }
+    });
 
-    let seeders = app.stats.as_ref().map_or(0, |s| s.seeders);
-    let leechers = app.stats.as_ref().map_or(0, |s| s.leechers);
+    let seeders = stats.map_or(0, |s| s.seeders);
+    let leechers = stats.map_or(0, |s| s.leechers);
 
     let mut status_spans = vec![
         Span::styled(format!(" {status_text}"), Style::default().fg(status_color)),

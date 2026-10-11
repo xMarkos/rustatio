@@ -71,6 +71,11 @@ export function mergeSummary(instance, summary) {
     next.statusMessage = status.statusMessage;
     next.statusType = status.statusType;
     next.statusIcon = status.statusIcon;
+  } else if (summary.isPaced ?? instance.stats?.is_paced) {
+    const derived = getPacingStatus(summary.pacingReason ?? instance.stats?.pacing_reason);
+    next.statusMessage = derived.statusMessage;
+    next.statusType = derived.statusType;
+    next.statusIcon = derived.statusIcon;
   } else if (isRunning) {
     next.statusMessage = 'Actively faking ratio...';
     next.statusType = 'running';

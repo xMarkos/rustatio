@@ -50,6 +50,7 @@ const TONES = {
 
 const STATE_META = {
   running: { label: 'Running', tone: 'upload', icon: 'circle' },
+  paced: { label: 'Pacing', tone: 'download', icon: 'turtle' },
   idle: { label: 'Idle', tone: 'idle', icon: 'moon' },
   paused: { label: 'Paused', tone: 'ratio', icon: 'pause' },
   stopped: { label: 'Stopped', tone: 'muted', icon: 'square' },
@@ -61,7 +62,8 @@ const STATE_META = {
 const TYPE_META = {
   idle: { label: 'Ready', tone: 'upload', icon: 'circle' },
   running: { label: 'Running', tone: 'primary', icon: 'rocket' },
-  paused: { label: 'Paused', tone: 'ratio', icon: 'pause' },
+  paced: { label: 'Pacing', tone: 'download', icon: 'turtle' },
+  paused: { label: 'Paced', tone: 'ratio', icon: 'pause' },
   idling: { label: 'Idling', tone: 'ratio', icon: 'moon' },
   success: { label: 'Done', tone: 'upload', icon: 'check' },
   warning: { label: 'Warning', tone: 'ratio', icon: 'alert' },

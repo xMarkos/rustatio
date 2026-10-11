@@ -395,6 +395,11 @@ function buildRestoredInstance(serverInst, statusMessage = 'restored from server
     instance.statusMessage = derived.statusMessage || 'Idling';
     instance.statusType = derived.statusType || 'idle';
     instance.statusIcon = derived.statusIcon || null;
+  } else if (serverInst.stats?.is_paced) {
+    const derived = getPacingStatus(serverInst.stats.pacing_reason);
+    instance.statusMessage = derived.statusMessage;
+    instance.statusType = derived.statusType;
+    instance.statusIcon = derived.statusIcon;
   } else if (instance.isRunning) {
     instance.statusMessage = `Running - ${statusMessage}`;
     instance.statusType = 'running';
