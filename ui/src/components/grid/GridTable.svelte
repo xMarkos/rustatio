@@ -457,7 +457,7 @@ let view = $derived(
 
             <!-- State -->
             <td class="whitespace-nowrap border-b border-border/60 px-2 py-1">
-              <StatusBadge state={instance.state} size="xs" />
+              <StatusBadge state={instance.isPaced ? 'paced' : instance.state} size="xs" />
             </td>
 
             <!-- Progress -->
