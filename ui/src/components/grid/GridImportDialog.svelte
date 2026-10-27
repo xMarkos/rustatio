@@ -93,11 +93,11 @@
   let minLeechers = $state(0);
   let maxSeederLeecherRatio = $state(null);
   let swarmPacingEnabled = $state(true);
-  let swarmMaxPeers = $state();
-  let swarmResampleIntervalSecs = $state();
-  let swarmEpsilonMinPercent = $state();
-  let swarmPhaseMinOursPercent = $state();
-  let swarmPhaseMinSeedFraction = $state();
+  let swarmMaxPeers = $state(8);
+  let swarmResampleIntervalSecs = $state(120);
+  let swarmEpsilonMinPercent = $state(1.0);
+  let swarmPhaseMinOursPercent = $state(90.0);
+  let swarmPhaseMinSeedFraction = $state(0.7);
   let advancedOpen = $state(false);
 
   // Import state
@@ -503,11 +503,11 @@
     minLeechers = 0;
     maxSeederLeecherRatio = null;
     swarmPacingEnabled = true;
-    swarmMaxPeers = undefined;
-    swarmResampleIntervalSecs = undefined;
-    swarmEpsilonMinPercent = undefined;
-    swarmPhaseMinOursPercent = undefined;
-    swarmPhaseMinSeedFraction = undefined;
+    swarmMaxPeers = 8;
+    swarmResampleIntervalSecs = 120;
+    swarmEpsilonMinPercent = 1.0;
+    swarmPhaseMinOursPercent = 90.0;
+    swarmPhaseMinSeedFraction = 0.7;
     updateIntervalSeconds = 5;
     scrapeInterval = 60;
     advancedOpen = false;
